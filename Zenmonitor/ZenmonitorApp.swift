@@ -1,14 +1,14 @@
 //
-//  zenmux_monitorApp.swift
-//  zenmux-monitor
+//  ZenmonitorApp.swift
+//  Zenmonitor
 //
-//  Zenmux 菜单栏监控小程序入口
+//  Zenmonitor 菜单栏多源监控入口
 //
 
 import SwiftUI
 
 @main
-struct zenmux_monitorApp: App {
+struct ZenmonitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -17,4 +17,3 @@ struct zenmux_monitorApp: App {
         }
     }
 }
-
