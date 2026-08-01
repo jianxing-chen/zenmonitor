@@ -37,7 +37,7 @@ enum DeepSeekAPIError: LocalizedError {
 
 @MainActor
 @Observable
-final class DeepSeekAPIService {
+final class DeepSeekAPIService: MonitoredSource {
     static let shared = DeepSeekAPIService()
 
     private let baseURL = URL(string: "https://api.deepseek.com/user/balance")!
@@ -113,5 +113,39 @@ final class DeepSeekAPIService {
         } catch {
             lastError = DeepSeekAPIError.networkError(error).localizedDescription
         }
+    }
+
+    // MARK: - MonitoredSource 协议实现
+
+    var sourceID: String { "deepseek" }
+
+    var displayName: String { "DeepSeek" }
+
+    var logoImageName: String? { "DeepSeekLogo" }
+
+    var snapshot: SourceSnapshot? {
+        guard let data = balanceData, !data.balance_infos.isEmpty else { return nil }
+        return .balance(makeBalanceSnapshot(from: data))
+    }
+
+    /// MonitoredSource 协议要求的统一刷新入口
+    func refresh() async {
+        await fetchBalance()
+    }
+
+    /// 把 DeepSeek 原始余额数据转换为通用余额快照
+    private func makeBalanceSnapshot(from data: DeepSeekBalanceResponse) -> BalanceSnapshot {
+        // 取第一个币种（通常 CNY）；多币种场景后续可扩展为多行展示
+        let info = data.balance_infos[0]
+        return BalanceSnapshot(
+            title: "DeepSeek 余额",
+            currencySymbol: info.symbol,
+            total: String(format: "%.2f", info.total),
+            breakdown: [
+                (label: "赠金", value: String(format: "%.2f", info.granted)),
+                (label: "充值", value: String(format: "%.2f", info.toppedUp))
+            ],
+            status: data.is_available ? .healthy : .limited
+        )
     }
 }

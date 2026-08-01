@@ -36,8 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var settingsWindow: NSWindow?
     private var appearanceObservers: [NSObjectProtocol] = []
     private var isShuttingDown = false
-    private let apiService = ZenmuxAPIService.shared
-    private let deepseekService = DeepSeekAPIService.shared
+    private let registry = SourceRegistry.shared
     private var sizeObservers: [MenuHostingSizeObserver] = []
     private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 49, height: 22))
 
@@ -46,7 +45,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         setupStatusItem()
         observeAPIService()
         observeAppearanceChanges()
-        apiService.handleAppLaunch()
+        // 启动所有源：Zenmux 走 handleAppLaunch，DeepSeek 走 restoreCachedBalance（已在 init 中）
+        registry.sources.forEach { source in
+            if let zenmux = source as? ZenmuxAPIService {
+                zenmux.handleAppLaunch()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -62,8 +66,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @MainActor
     private func observeAPIService() {
-        apiService.onStateChange = { [weak self] in
-            self?.updateStatusItemImage()
+        // 监听每个源的变化，任一源更新都刷新状态栏
+        registry.sources.forEach { source in
+            if let zenmux = source as? ZenmuxAPIService {
+                zenmux.onStateChange = { [weak self] in
+                    self?.updateStatusItemImage()
+                }
+            }
         }
         updateStatusItemImage()
     }
@@ -74,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.length = statusView.intrinsicContentSize.width
 
-        statusView.apiService = apiService
+        statusView.registry = registry
 
         if let button = item.button {
             button.title = ""
@@ -113,60 +122,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     // MARK: - 菜单构建（懒加载）
 
     private func buildMenuItems(into menu: NSMenu) {
+        // 全局 Header：App 名 + 全局操作（暂停/刷新）
         let headerItem = NSMenuItem()
-        let headerView = MenuHeaderView(apiService: apiService)
+        let headerView = MenuGlobalHeaderView(registry: registry)
         let hosting = NSHostingView(rootView: headerView.frame(width: menuContentWidth))
         let headerSize = hosting.fittingSize
         hosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: headerSize.height)
         headerItem.view = hosting
         menu.addItem(headerItem)
 
-        // 配额视图：直接引用 apiService（@Observable），数据更新时自动重绘
-        let quotaItem = NSMenuItem()
-        let quotaView = MenuQuotaView(apiService: apiService)
-        let quotaHosting = NSHostingView(rootView: quotaView.frame(width: menuContentWidth))
-        let quotaSize = quotaHosting.fittingSize
-        quotaHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: quotaSize.height)
-        quotaItem.view = quotaHosting
-        menu.addItem(quotaItem)
-        // KVO 监听高度变化：缓存被清后重新加载数据时，内容从"加载中"变高，需撑开 frame
-        let quotaObserver = MenuHostingSizeObserver(
-            hostingView: quotaHosting, menu: menu, menuContentWidth: menuContentWidth
-        )
-        sizeObservers.append(quotaObserver)
-        quotaObserver.start()
+        // 动态构建每个启用的源区块
+        for (index, source) in registry.sources.enumerated() {
+            // 源之间有分隔线（第一个源前不加）
+            if index > 0 {
+                menu.addItem(.separator())
+            }
 
-        // DeepSeek 余额区块（仅在已配置 Key 时显示）
-        if SettingsManager.shared.deepseekAPIKey?.isEmpty == false {
-            menu.addItem(.separator())
-            let dsItem = NSMenuItem()
-            let dsView = DeepSeekBalanceView(service: deepseekService)
-            let dsHosting = NSHostingView(rootView: dsView.frame(width: menuContentWidth))
-            let dsSize = dsHosting.fittingSize
-            dsHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: dsSize.height)
-            dsItem.view = dsHosting
-            menu.addItem(dsItem)
+            let item = NSMenuItem()
+            let view: AnyView
+
+            if let snapshot = source.snapshot {
+                switch snapshot {
+                case .quota(let quotaSnapshot):
+                    view = AnyView(SourceQuotaSection(source: source, snapshot: quotaSnapshot))
+                case .balance(let balanceSnapshot):
+                    view = AnyView(SourceBalanceSection(source: source, snapshot: balanceSnapshot))
+                }
+            } else {
+                // 无数据时显示占位（如 DeepSeek 未配置 Key）
+                view = AnyView(SourcePlaceholderSection(source: source))
+            }
+
+            let hosting = NSHostingView(rootView: view.frame(width: menuContentWidth))
+            let size = hosting.fittingSize
+            hosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: size.height)
+            item.view = hosting
+            menu.addItem(item)
 
             // KVO 监听内容尺寸变化：数据异步返回后 fittingSize 变化，
             // 需更新 frame 避免内容被裁剪（覆盖安装后首次无缓存时尤为明显）
-            let sizeObserver = MenuHostingSizeObserver(
-                hostingView: dsHosting,
-                menu: menu,
-                menuContentWidth: menuContentWidth
+            let observer = MenuHostingSizeObserver(
+                hostingView: hosting, menu: menu, menuContentWidth: menuContentWidth
             )
-            sizeObservers.append(sizeObserver)
-            sizeObserver.start()
+            sizeObservers.append(observer)
+            observer.start()
         }
 
         menu.addItem(.separator())
 
+        // 底部操作行
         let actionItem = NSMenuItem()
         let actionView = MenuActionRow(
             onSettings: { [weak self] in self?.openSettings() },
             onRefresh: { [weak self] in self?.refreshData() },
             onQuit: { [weak self] in self?.quitApp() },
-            isRefreshing: apiService.isRefreshing,
-            hasAPIKey: !(SettingsManager.shared.apiKey?.isEmpty ?? true),
+            isRefreshing: registry.isAnyRefreshing,
+            hasAPIKey: true,  // 多源场景下，任一源有数据即可刷新；DeepSeek 未配置时静默跳过
             isShuttingDown: isShuttingDown
         )
         let actionHosting = NSHostingView(rootView: actionView.frame(width: menuContentWidth))
@@ -185,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 backing: .buffered,
                 defer: false
             )
-            win.title = "Zenmux 监控设置"
+            win.title = "Zenmonitor 设置"
             win.contentView = NSHostingView(rootView: SettingsView())
             win.minSize = NSSize(width: 420, height: 300)
             win.center()
@@ -205,16 +216,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func refreshData() {
         guard !isShuttingDown else { return }
-        // Zenmux 与 DeepSeek 各自独立刷新，互不阻断
-        if !apiService.isRefreshing {
-            Task { [weak self] in
-                guard let self, !self.isShuttingDown else { return }
-                await self.apiService.refreshNow()
-            }
-        }
         Task { [weak self] in
             guard let self, !self.isShuttingDown else { return }
-            await self.deepseekService.fetchBalance()
+            await self.registry.refreshAll()
         }
     }
 
@@ -224,10 +228,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         guard !isShuttingDown else { return }
         if !menu.items.isEmpty { menu.removeAllItems() }
         buildMenuItems(into: menu)
-        // 菜单打开时拉取 DeepSeek 余额（已配置 Key 才会发请求）
+        // 菜单打开时刷新所有源（DeepSeek 走「菜单打开时拉取」策略）
         Task { [weak self] in
             guard let self, !self.isShuttingDown else { return }
-            await self.deepseekService.fetchBalance()
+            await self.registry.refreshAll()
         }
     }
 
@@ -248,7 +252,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func performShutdownCleanup() {
         isShuttingDown = true
-        apiService.onStateChange = nil
+        // 清理每个源的回调
+        registry.sources.forEach { source in
+            if let zenmux = source as? ZenmuxAPIService {
+                zenmux.onStateChange = nil
+                zenmux.cleanup()
+            }
+        }
         statusItem?.menu?.delegate = nil
         statusItem?.menu?.removeAllItems()
 
@@ -258,8 +268,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             win.delegate = nil
             settingsWindow = nil
         }
-
-        apiService.cleanup()
 
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
@@ -272,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
 /// KVO 监听 NSHostingView 的 intrinsicContentSize 变化，
 /// 数据异步返回后重算 frame 高度，避免内容被固定高度裁剪。
-/// 用于 Zenmux 配额区块与 DeepSeek 余额区块。
+/// 用于各源区块。
 final class MenuHostingSizeObserver: NSObject {
     private weak var hostingView: NSView?
     private weak var menu: NSMenu?
@@ -308,7 +316,7 @@ final class MenuHostingSizeObserver: NSObject {
 // MARK: - 菜单栏自定义绘制视图
 
 final class StatusBarView: NSView {
-    weak var apiService: ZenmuxAPIService?
+    weak var registry: SourceRegistry?
 
     private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 9.2, weight: .regular)
     private static let pausedFont = NSFont.systemFont(ofSize: 7)
@@ -358,13 +366,18 @@ final class StatusBarView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        guard let data = apiService?.subscriptionData else {
+        // 从主配额源读取快照
+        guard let source = registry?.primaryQuotaSource,
+              let snapshot = source.snapshot,
+              case .quota(let quotaSnapshot) = snapshot,
+              quotaSnapshot.windows.count >= 2 else {
             drawPlaceholder()
             return
         }
 
-        if apiService?.isPaused == true {
-            drawPaused(data)
+        // Zenmux 特有：检查暂停状态（通过协议扩展或类型判断）
+        if let zenmux = source as? ZenmuxAPIService, zenmux.isPaused {
+            drawPaused(quotaSnapshot)
             return
         }
 
@@ -377,34 +390,37 @@ final class StatusBarView: NSView {
         let bottomY = topY - barH - spacing
         let corner: CGFloat = 2.25
 
+        // 前两个窗口：5h 在上，7d 在下（按 QuotaSnapshot.windows 顺序）
+        let windows = quotaSnapshot.windows
         drawBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
-                pct: data.quota_5_hour.usage_percentage, radius: corner, palette: palette)
+                pct: windows[0].pct, radius: corner, palette: palette)
         drawBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
-                pct: data.quota_7_day.usage_percentage, radius: corner, palette: palette)
+                pct: windows[1].pct, radius: corner, palette: palette)
 
         let textAttrs: [NSAttributedString.Key: Any] = [
             .font: Self.percentFont,
             .foregroundColor: palette.primaryText
         ]
-        drawPercent(text: percentStr(data.quota_5_hour.usage_percentage),
+        drawPercent(text: percentStr(windows[0].pct),
                 rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
                 barY: topY, barH: barH, attrs: textAttrs)
-        drawPercent(text: percentStr(data.quota_7_day.usage_percentage),
+        drawPercent(text: percentStr(windows[1].pct),
                 rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
                 barY: bottomY, barH: barH, attrs: textAttrs)
     }
 
-    private func drawPaused(_ data: ZenmuxSubscriptionData) {
+    private func drawPaused(_ snapshot: QuotaSnapshot) {
         let palette = currentPalette
         let layout = pausedLayoutMetrics
         let barH: CGFloat = 4.5
         let topY = bounds.height - barH - 5
         let bottomY = topY - barH - 2
 
+        let windows = snapshot.windows
         drawDimmedBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
-                      pct: data.quota_5_hour.usage_percentage, palette: palette)
+                      pct: windows[0].pct, palette: palette)
         drawDimmedBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
-                      pct: data.quota_7_day.usage_percentage, palette: palette)
+                      pct: windows[1].pct, palette: palette)
 
         let attrs: [NSAttributedString.Key: Any] = [
             .font: Self.pausedFont,
@@ -458,7 +474,8 @@ final class StatusBarView: NSView {
         drawDimmedBar(x: 4, y: topY, width: 24, height: barH, pct: 0.45, palette: palette)
         drawDimmedBar(x: 4, y: bottomY, width: 24, height: barH, pct: 0.7, palette: palette)
 
-        if apiService?.lastError != nil {
+        // 任一源有错误时显示 "!"
+        if registry?.sources.contains(where: { $0.lastError != nil }) == true {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: 9),
                 .foregroundColor: NSColor.black
@@ -530,10 +547,11 @@ final class StatusBarView: NSView {
     }
 }
 
-// MARK: - 菜单 Header 视图
+// MARK: - 菜单全局 Header 视图
 
-struct MenuHeaderView: View {
-    let apiService: ZenmuxAPIService
+/// 全局 Header：App 名 + 全局刷新时间 + 暂停/继续按钮（弱化 Zenmux 专属信息）
+struct MenuGlobalHeaderView: View {
+    let registry: SourceRegistry
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -556,70 +574,43 @@ struct MenuHeaderView: View {
         .padding(.bottom, 6)
     }
 
-    private static let dateFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM/dd"; return f }()
-
-    private func formatDate(_ iso: String) -> String {
-        guard let date = iso.iso8601Date else { return String(iso.prefix(10)) }
-        return Self.dateFmt.string(from: date)
-    }
-
     @ViewBuilder
     private var leftSummary: some View {
-        if let data = apiService.subscriptionData {
-            let status = ZenmuxAccountStatus.from(data.account_status)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Zenmux \(data.plan.tier.capitalized)")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(statusColor(status))
-                        .frame(width: 6, height: 6)
-                    Text(status.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("到期 \(formatDate(data.plan.expires_at))")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Zenmonitor")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            if let updated = registry.latestUpdateTime {
+                Text("更新于 \(relativeTime(updated))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
                 Text("未连接")
-                    .font(.subheadline.weight(.semibold))
-                if let err = apiService.lastError {
-                    Text(err)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
     private var rightActions: some View {
         HStack(spacing: 8) {
-            if let updated = apiService.lastUpdated {
-                Text("更新于 \(relativeTime(updated))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Button {
-                if apiService.isPaused {
-                    apiService.resumeAutoRefresh()
-                } else {
-                    apiService.pauseAutoRefresh()
+            // 主源（Zenmux）的暂停/继续按钮
+            if let zenmux = registry.sources.first(where: { $0.sourceID == "zenmux" }) as? ZenmuxAPIService {
+                Button {
+                    if zenmux.isPaused {
+                        zenmux.resumeAutoRefresh()
+                    } else {
+                        zenmux.pauseAutoRefresh()
+                    }
+                } label: {
+                    Image(systemName: zenmux.isPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 18, height: 18)
                 }
-            } label: {
-                Image(systemName: apiService.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 18, height: 18)
+                .buttonStyle(.plain)
+                .foregroundStyle(zenmux.isPaused ? .green : .orange)
+                .accessibilityLabel(zenmux.isPaused ? "恢复自动刷新" : "暂停自动刷新")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(apiService.isPaused ? .green : .orange)
-            .accessibilityLabel(apiService.isPaused ? "恢复自动刷新" : "暂停自动刷新")
         }
     }
 
@@ -629,95 +620,72 @@ struct MenuHeaderView: View {
         if seconds < 3600 { return "\(seconds / 60)分前" }
         return "\(seconds / 3600)时前"
     }
-
-    private func statusColor(_ s: ZenmuxAccountStatus) -> Color {
-        switch s {
-        case .healthy: .green
-        case .monitored: .yellow
-        case .abusive: .orange
-        case .suspended, .banned: .red
-        case .unknown: .gray
-        }
-    }
 }
 
-// MARK: - 菜单配额视图
+// MARK: - 源配额区块
 
-struct MenuQuotaView: View {
-    let apiService: ZenmuxAPIService
-
-    /// 当前订阅数据（实时引用 apiService，@Observable 变化自动驱动重绘）
-    private var data: ZenmuxSubscriptionData? { apiService.subscriptionData }
-
-    /// 7d 预测占比：当前 7d 用量 + 5h 剩余可用量（即 5h 用满的增量），占 7d 上限的比例。
-    /// 5h 用满时增量=0，预测=实际，阴影与主条重合不可见；5h 越空，阴影越长。
-    private var projected7dPct: Double {
-        guard let data else { return 0 }
-        let max7d = data.quota_7_day.max_flows
-        guard max7d > 0 else { return 0 }
-        let projectedUsed = data.quota_7_day.used_flows
-            + data.quota_5_hour.max_flows
-            - data.quota_5_hour.used_flows
-        return min(max(projectedUsed / max7d, 0), 1)
-    }
+/// 配额型源（Zenmux）的菜单区块：标题 + 状态 + 到期 + 进度条列表 + 指标卡片
+struct SourceQuotaSection: View {
+    let source: any MonitoredSource
+    let snapshot: QuotaSnapshot
 
     var body: some View {
-        if let data {
-            VStack(spacing: 12) {
-                QuotaRow(
-                    label: "5 小时用量", icon: "clock",
-                    pct: data.quota_5_hour.usage_percentage,
-                    used: data.quota_5_hour.used_flows,
-                    maxFlows: data.quota_5_hour.max_flows,
-                    usedUSD: data.quota_5_hour.used_value_usd,
-                    maxUSD: data.quota_5_hour.max_value_usd,
-                    resetsAt: data.quota_5_hour.resets_at,
-                    windowDuration: 5 * 3600
-                )
-                QuotaRow(
-                    label: "7 天用量", icon: "calendar",
-                    pct: data.quota_7_day.usage_percentage,
-                    used: data.quota_7_day.used_flows,
-                    maxFlows: data.quota_7_day.max_flows,
-                    usedUSD: data.quota_7_day.used_value_usd,
-                    maxUSD: data.quota_7_day.max_value_usd,
-                    resetsAt: data.quota_7_day.resets_at,
-                    windowDuration: 7 * 24 * 3600,
-                    projectedPct: projected7dPct
-                )
+        VStack(alignment: .leading, spacing: 10) {
+            // 源头部：标题 + 状态 + 到期
+            HStack(spacing: 6) {
+                Text(snapshot.title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(snapshot.status.color)
+                        .frame(width: 6, height: 6)
+                    Text(snapshot.status.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let expiry = snapshot.expiryText {
+                        Text(expiry)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                }
+            }
 
-                HStack(spacing: 10) {
-                    compactMetricCard(
-                        title: "当月上限",
-                        value: "\(formatNum(data.quota_monthly.max_flows)) flows",
-                        detail: "$\(formatNum(data.quota_monthly.max_value_usd))",
-                        icon: "chart.bar.fill",
-                        tint: .purple
+            // 配额窗口列表（5h / 7d / ...）
+            VStack(spacing: 12) {
+                ForEach(Array(snapshot.windows.enumerated()), id: \.offset) { _, window in
+                    QuotaRow(
+                        label: window.label,
+                        icon: window.icon,
+                        pct: window.pct,
+                        usedText: window.usedText,
+                        usedUSDText: window.usedUSDText,
+                        resetsAt: window.resetsAt,
+                        windowDuration: window.windowDuration,
+                        projectedPct: window.projectedPct
                     )
-                    compactMetricCard(
-                        title: "汇率",
-                    value: "$\(String(format: "%.4f", data.effective_usd_per_flow))",
-                    detail: "per flow",
-                    icon: "dollarsign.circle.fill",
-                    tint: .green
-                )
+                }
+            }
+
+            // 补充指标卡片（月度上限 / 汇率）
+            if !snapshot.extraMetrics.isEmpty {
+                HStack(spacing: 10) {
+                    ForEach(Array(snapshot.extraMetrics.enumerated()), id: \.offset) { _, metric in
+                        compactMetricCard(
+                            title: metric.title,
+                            value: metric.value,
+                            detail: metric.detail,
+                            icon: metric.icon,
+                            tint: metric.tint
+                        )
+                    }
+                }
             }
         }
         .padding(.horizontal, 12)
         .padding(.top, 2)
         .padding(.bottom, 4)
-        } else {
-            Text("加载中...")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-        }
-    }
-
-    private func formatNum(_ v: Double) -> String {
-        v >= 10000 ? String(format: "%.2fk", v / 1000)
-                   : String(format: "%.2f", v)
     }
 
     private func compactMetricCard(title: String, value: String, detail: String, icon: String, tint: Color) -> some View {
@@ -740,13 +708,17 @@ struct MenuQuotaView: View {
     }
 }
 
+// MARK: - 配额行（纯渲染器）
+
 struct QuotaRow: View {
-    let label: String; let icon: String
-    let pct: Double; let used: Double; let maxFlows: Double
-    let usedUSD: Double; let maxUSD: Double
-    let resetsAt: String?
+    let label: String
+    let icon: String
+    let pct: Double
+    let usedText: String
+    let usedUSDText: String?
+    let resetsAt: Date?
     let windowDuration: TimeInterval
-    /// 预测占比：若 5h 用量被用满，本窗口（7d）将达到的占比 [0,1]。
+    /// 预测占比：若上游窗口用满，本窗口将达到的占比 [0,1]。
     /// 仅 7d 行传入；nil 表示不渲染预测阴影。
     var projectedPct: Double? = nil
 
@@ -780,7 +752,7 @@ struct QuotaRow: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.primary.opacity(0.10))
                         .frame(height: 8)
-                    // 预测阴影：5h 用满后本窗口将达到的位置（半透明，露出主条右侧部分）
+                    // 预测阴影：上游窗口用满后本窗口将达到的位置（半透明，露出主条右侧部分）
                     // 颜色按预测值判档，提前预警（预测进入中/高档时阴影变橙/红）
                     if let proj = projectedPct {
                         RoundedRectangle(cornerRadius: 2)
@@ -806,13 +778,15 @@ struct QuotaRow: View {
             }
 
             HStack {
-                Text("已用 \(String(format: "%.2f", used))/\(String(format: "%.2f", maxFlows)) flows")
+                Text(usedText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("$\(String(format: "%.2f", usedUSD)) / $\(String(format: "%.2f", maxUSD))")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                if let usdText = usedUSDText {
+                    Text(usdText)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             if let reset = resetsAt {
@@ -839,16 +813,13 @@ struct QuotaRow: View {
         let f = DateFormatter(); f.dateFormat = "EEE MM/dd HH:mm"; return f
     }()
 
-    private func formatReset(_ iso: String) -> String {
-        guard let date = iso.iso8601Date else {
-            return String(iso.prefix(16))
-        }
-        return Self.resetFmt.string(from: date)
+    private func formatReset(_ date: Date) -> String {
+        Self.resetFmt.string(from: date)
     }
 
     /// 时间占比百分比字符串，如 " · 45%"
     private var timePercentStr: String {
-        guard let reset = resetsAt, let end = reset.iso8601Date else { return "" }
+        guard let end = resetsAt else { return "" }
         let now = Date()
         guard now < end else { return " · 100%" }
         let start = end.addingTimeInterval(-windowDuration)
@@ -864,24 +835,23 @@ struct QuotaRow: View {
 
 // MARK: - 时间进度三角形（进度条下方指示标记）
 
-/// 紧贴 7d 进度条下方的小三角形，水平位置 = 圆环的时间占比，
-/// 与右端圆环同步，颜色跟随进度条用量色。不占据布局空间（由 overlay + offset 实现）。
+/// 紧贴进度条下方的小三角形，水平位置 = 当前时间在滚动周期内的占比，
+/// 颜色跟随进度条用量色。不占据布局空间（由 overlay + offset 实现）。
 struct TimeMarkerTriangle: View {
-    let resetsAt: String
+    let resetsAt: Date
     let windowDuration: TimeInterval
     let color: Color
     let trackWidth: CGFloat
 
     private func fraction(at now: Date) -> Double {
-        guard let end = resetsAt.iso8601Date else { return 0 }
-        guard now < end else { return 1 }
-        let start = end.addingTimeInterval(-windowDuration)
+        guard now < resetsAt else { return 1 }
+        let start = resetsAt.addingTimeInterval(-windowDuration)
         let f = now.timeIntervalSince(start) / windowDuration
         return min(max(f, 0), 1)
     }
 
     var body: some View {
-        // 与圆环共享 TimelineView，每分钟推进一次
+        // 每分钟推进一次
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let fraction = fraction(at: context.date)
             let x = trackWidth * fraction
@@ -898,54 +868,78 @@ struct TimeMarkerTriangle: View {
     }
 }
 
-// MARK: - DeepSeek 余额区块
+// MARK: - 源余额区块
 
-struct DeepSeekBalanceView: View {
-    let service: DeepSeekAPIService
+/// 余额型源（DeepSeek）的菜单区块：标题 + 总余额 + 明细
+struct SourceBalanceSection: View {
+    let source: any MonitoredSource
+    let snapshot: BalanceSnapshot
 
     var body: some View {
         VStack(spacing: 6) {
-            if let data = service.balanceData, !data.balance_infos.isEmpty {
-                ForEach(Array(data.balance_infos.enumerated()), id: \.offset) { _, info in
-                    // 左标题 + 右余额数字/详情，同一行垂直居中
-                    HStack(alignment: .center) {
-                        Label("DeepSeek 余额", systemImage: "creditcard.fill")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        // 余额数字 + 明细，右对齐成组
-                        VStack(alignment: .trailing, spacing: 1) {
-                            Text("\(info.symbol)\(String(format: "%.2f", info.total))")
-                                .font(.subheadline.weight(.semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(.primary)
-                            Text("赠金 \(info.symbol)\(String(format: "%.2f", info.granted))  充值 \(info.symbol)\(String(format: "%.2f", info.toppedUp))")
+            HStack(alignment: .center) {
+                Label(snapshot.title, systemImage: "creditcard.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                // 余额数字 + 明细，右对齐成组
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("\(snapshot.currencySymbol)\(snapshot.total)")
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                    HStack(spacing: 4) {
+                        ForEach(Array(snapshot.breakdown.enumerated()), id: \.offset) { _, item in
+                            Text("\(item.label) \(snapshot.currencySymbol)\(item.value)")
                                 .font(.caption)
                                 .monospacedDigit()
                                 .foregroundStyle(.tertiary)
                         }
                     }
                 }
-            } else {
-                // 无数据时仍保留标题行，保持区块高度一致
-                HStack(alignment: .center) {
-                    Label("DeepSeek 余额", systemImage: "creditcard.fill")
-                        .font(.subheadline.weight(.medium))
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
+    }
+}
+
+// MARK: - 源占位区块
+
+/// 源无数据时的占位展示（如 DeepSeek 未配置 Key）
+struct SourcePlaceholderSection: View {
+    let source: any MonitoredSource
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(alignment: .center) {
+                Label(source.displayName, systemImage: "questionmark.circle")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if source.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 14, height: 14)
+                } else if let err = source.lastError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(Color(red: 0.90, green: 0.34, blue: 0.31))
+                        .lineLimit(2)
+                } else {
+                    Text("未配置或无数据")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    if service.isRefreshing {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 14, height: 14)
-                    } else if let err = service.lastError {
-                        Text(err)
-                            .font(.caption)
-                            .foregroundStyle(Color(red: 0.90, green: 0.34, blue: 0.31))
-                    } else {
-                        Text("无余额数据")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
             }
         }
@@ -990,7 +984,7 @@ struct MenuActionRow: View {
                 icon: "arrow.clockwise",
                 label: isRefreshing ? "刷新中" : "刷新",
                 action: onRefresh,
-                disabled: !hasAPIKey || isRefreshing || isShuttingDown
+                disabled: isRefreshing || isShuttingDown
             )
 
             Divider()

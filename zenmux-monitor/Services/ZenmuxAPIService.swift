@@ -9,6 +9,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 enum ZenmuxAPIErrorType: LocalizedError {
     case invalidURL
@@ -38,7 +39,7 @@ enum ZenmuxAPIErrorType: LocalizedError {
 
 @MainActor
 @Observable
-final class ZenmuxAPIService {
+final class ZenmuxAPIService: MonitoredSource {
     static let shared = ZenmuxAPIService()
 
     /// 当前 API 域名对应的 subscription detail 接口 URL，随 SettingsManager.apiDomain 联动。
@@ -251,5 +252,119 @@ final class ZenmuxAPIService {
 
         subscriptionData = cachedData
         lastUpdated = cachedAt
+    }
+
+    // MARK: - MonitoredSource 协议实现
+
+    var sourceID: String { "zenmux" }
+
+    var displayName: String { "Zenmux" }
+
+    var logoImageName: String? { nil }  // 使用 App 图标，无需单独资产
+
+    var snapshot: SourceSnapshot? {
+        guard let data = subscriptionData else { return nil }
+        return .quota(makeQuotaSnapshot(from: data))
+    }
+
+    /// MonitoredSource 协议要求的统一刷新入口
+    func refresh() async {
+        await refreshNow()
+    }
+
+    /// 把 Zenmux 原始订阅数据转换为通用配额快照
+    private func makeQuotaSnapshot(from data: ZenmuxSubscriptionData) -> QuotaSnapshot {
+        QuotaSnapshot(
+            title: "Zenmux \(data.plan.tier.capitalized)",
+            status: mapStatus(data.account_status),
+            expiryText: makeExpiryText(data.plan.expires_at),
+            windows: [
+                makeWindowData(
+                    id: "5h",
+                    label: "5 小时用量",
+                    icon: "clock",
+                    window: data.quota_5_hour,
+                    duration: 5 * 3600,
+                    projectedPct: nil
+                ),
+                makeWindowData(
+                    id: "7d",
+                    label: "7 天用量",
+                    icon: "calendar",
+                    window: data.quota_7_day,
+                    duration: 7 * 24 * 3600,
+                    projectedPct: makeProjected7dPct(data)
+                )
+            ],
+            extraMetrics: [
+                MetricCard(
+                    title: "当月上限",
+                    value: "\(formatNum(data.quota_monthly.max_flows)) flows",
+                    detail: "$\(formatNum(data.quota_monthly.max_value_usd))",
+                    icon: "chart.bar.fill",
+                    tint: .purple
+                ),
+                MetricCard(
+                    title: "汇率",
+                    value: "$\(String(format: "%.4f", data.effective_usd_per_flow))",
+                    detail: "per flow",
+                    icon: "dollarsign.circle.fill",
+                    tint: .green
+                )
+            ]
+        )
+    }
+
+    private func makeWindowData(
+        id: String,
+        label: String,
+        icon: String,
+        window: ZenmuxQuotaWindow,
+        duration: TimeInterval,
+        projectedPct: Double?
+    ) -> QuotaWindowData {
+        QuotaWindowData(
+            id: id,
+            label: label,
+            icon: icon,
+            pct: window.usage_percentage,
+            usedText: "\(formatNum(window.used_flows))/\(formatNum(window.max_flows)) flows",
+            usedUSDText: "$\(formatNum(window.used_value_usd)) / $\(formatNum(window.max_value_usd))",
+            resetsAt: window.resets_at?.iso8601Date,
+            windowDuration: duration,
+            projectedPct: projectedPct
+        )
+    }
+
+    /// 7d 预测占比：当前 7d 用量 + 5h 剩余可用量（即 5h 用满的增量），占 7d 上限的比例
+    private func makeProjected7dPct(_ data: ZenmuxSubscriptionData) -> Double? {
+        let max7d = data.quota_7_day.max_flows
+        guard max7d > 0 else { return nil }
+        let projectedUsed = data.quota_7_day.used_flows
+            + data.quota_5_hour.max_flows
+            - data.quota_5_hour.used_flows
+        return min(max(projectedUsed / max7d, 0), 1)
+    }
+
+    private func makeExpiryText(_ iso: String) -> String? {
+        guard let date = iso.iso8601Date else { return nil }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MM/dd"
+        return "到期 \(fmt.string(from: date))"
+    }
+
+    private func mapStatus(_ raw: String) -> StatusIndicator {
+        switch ZenmuxAccountStatus.from(raw) {
+        case .healthy:   return .healthy
+        case .monitored: return .warning
+        case .abusive:   return .limited
+        case .suspended, .banned: return .suspended
+        case .unknown:   return .unknown
+        }
+    }
+
+    private func formatNum(_ v: Double) -> String {
+        v >= 10000 ? String(format: "%.2fk", v / 1000)
+                   : String(format: "%.2f", v)
     }
 }
