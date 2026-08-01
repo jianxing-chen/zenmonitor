@@ -1,8 +1,13 @@
 # Zenmonitor
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-macOS%2015.0%2B-blue.svg)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org/)
+[![GitHub release](https://img.shields.io/github/v/release/jianxing-chen/zenmonitor)](https://github.com/jianxing-chen/zenmonitor/releases)
+
 macOS 菜单栏多源监控工具，实时显示各类 API 服务的用量配额与余额。
 
-## 功能
+## ✨ 功能特性
 
 - **多源监控**：支持 Zenmux（配额型）、DeepSeek（余额型）等多个 API 服务，可随时扩展新源
 - **双进度条**：菜单栏直接显示主源 5 小时 / 7 天滚动窗口用量，菜单栏深浅随用量变化，下拉面板颜色随用量变化（蓝→橙→红），带精确百分比
@@ -14,41 +19,22 @@ macOS 菜单栏多源监控工具，实时显示各类 API 服务的用量配额
 - **本地设置保存**：API Key 与所有配置持久化在应用本地
 - **纯菜单栏运行**：无 Dock 图标，无窗口，极低资源占用
 
-## 截图
+## 📸 截图
 
 <img src="screenshot.png" width="320" alt="Zenmonitor 截图" />
 
 > 截图仅为软件界面示意，图中数据均为虚例。
 
-## 安装
+## 🚀 安装
 
-1. 从 [Releases](../../releases) 下载 `Zenmonitor.zip`
+### 方式一：下载预编译版本（推荐）
+
+1. 从 [Releases](../../releases) 下载最新版 `Zenmonitor-vX.X.zip`
 2. 解压后拖 `Zenmonitor.app` 到 `/Applications`
 3. 首次打开：**右键 App → 打开**（Ad Hoc 签名需绕过 Gatekeeper）
 4. 之后可在系统设置 → 通用 → 登录项 中设为开机自启
 
-## 配置
-
-1. 点击菜单栏图标 → **设置**
-2. 配置 Zenmux API Key：
-   - 前往 [Zenmux 控制台](https://zenmux.ai/platform/management) 创建 **Management API Key**
-   - 粘贴到设置窗口 → 保存
-3. （可选）配置 DeepSeek API Key：
-   - 前往 [DeepSeek 控制台](https://platform.deepseek.com/api_keys) 创建 API Key
-   - 粘贴到设置窗口 → 保存
-
-## 系统要求
-
-- macOS 15.0+
-- Apple Silicon / Intel（通用二进制）
-
-## 资源占用
-
-- 内存：空闲 ~20MB，菜单打开时 ~30MB
-- CPU：空闲时 < 0.1%，无轮询时 ≈ 0%
-- 网络：主源每 60s 一次小请求，DeepSeek 菜单打开时拉取
-
-## 开发
+### 方式二：自行编译
 
 ```bash
 git clone https://github.com/jianxing-chen/zenmonitor.git
@@ -58,6 +44,51 @@ open Zenmonitor.xcodeproj
 
 Cmd+R 运行，Cmd+B 编译。
 
-## License
+## ⚙️ 配置
 
-MIT
+1. 点击菜单栏图标 → **设置**
+2. 配置 Zenmux API Key：
+   - 前往 [Zenmux 控制台](https://zenmux.ai/platform/management) 创建 **Management API Key**
+   - 粘贴到设置窗口 → 保存
+3. （可选）配置 DeepSeek API Key：
+   - 前往 [DeepSeek 控制台](https://platform.deepseek.com/api_keys) 创建 API Key
+   - 粘贴到设置窗口 → 保存
+
+## 🏗️ 架构
+
+```
+MonitoredSource 协议（sourceID/displayName/snapshot/refresh）
+        ↓
+SourceSnapshot 统一快照（.quota / .balance）
+        ↓
+SourceRegistry 注册中心（sources/primaryQuotaSource/refreshAll）
+        ↓
+UI 泛型组件（SourceQuotaSection/SourceBalanceSection/SourceCard）
+```
+
+**添加新源**：
+1. 新建 `Services/YourAPIService.swift`，实现 `MonitoredSource` 协议
+2. 在 `SourceRegistry.init()` 中注册：`sources.append(YourAPIService.shared)`
+3. 新建 `Views/YourSourceCard.swift`（设置界面配置卡片）
+4. 在 `SettingsView.sourceCard(for:)` 中加 case `"your-source"`
+
+无需改动 `AppDelegate` / `StatusBarView` / 菜单构建逻辑，全部自动适配。
+
+## 📋 系统要求
+
+- macOS 15.0+
+- Apple Silicon / Intel（通用二进制）
+
+## 📊 资源占用
+
+- 内存：空闲 ~20MB，菜单打开时 ~30MB
+- CPU：空闲时 < 0.1%，无轮询时 ≈ 0%
+- 网络：主源每 60s 一次小请求，DeepSeek 菜单打开时拉取
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 📄 License
+
+[MIT](LICENSE) © jianxing-chen
