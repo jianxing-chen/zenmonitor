@@ -549,69 +549,63 @@ final class StatusBarView: NSView {
 
 // MARK: - 菜单全局 Header 视图
 
-/// 全局 Header：App 名 + 全局刷新时间 + 暂停/继续按钮（弱化 Zenmux 专属信息）
+/// 全局 Header：简化为一行，左侧 App 名，右侧操作按钮（暂停/刷新）
 struct MenuGlobalHeaderView: View {
     let registry: SourceRegistry
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            leftSummary
-            Spacer(minLength: 8)
-            rightActions
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-    }
-
-    @ViewBuilder
-    private var leftSummary: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Zenmonitor")
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-            if let updated = registry.latestUpdateTime {
-                Text("更新于 \(relativeTime(updated))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("未连接")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 10) {
+            // 左侧：App 名 + 更新时间（合并为一行）
+            HStack(spacing: 6) {
+                Text("Zenmonitor")
+                    .font(.subheadline.weight(.semibold))
+                if let updated = registry.latestUpdateTime {
+                    Text("· \(relativeTime(updated))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-        }
-    }
 
-    private var rightActions: some View {
-        HStack(spacing: 8) {
-            // 主源（Zenmux）的暂停/继续按钮
-            if let zenmux = registry.sources.first(where: { $0.sourceID == "zenmux" }) as? ZenmuxAPIService {
+            Spacer(minLength: 8)
+
+            // 右侧：操作按钮组
+            HStack(spacing: 12) {
+                // 主源（Zenmux）的暂停/继续按钮
+                if let zenmux = registry.sources.first(where: { $0.sourceID == "zenmux" }) as? ZenmuxAPIService {
+                    Button {
+                        if zenmux.isPaused {
+                            zenmux.resumeAutoRefresh()
+                        } else {
+                            zenmux.pauseAutoRefresh()
+                        }
+                    } label: {
+                        Image(systemName: zenmux.isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(zenmux.isPaused ? .green : .orange)
+                    .accessibilityLabel(zenmux.isPaused ? "恢复自动刷新" : "暂停自动刷新")
+                }
+
+                // 刷新按钮
                 Button {
-                    if zenmux.isPaused {
-                        zenmux.resumeAutoRefresh()
-                    } else {
-                        zenmux.pauseAutoRefresh()
+                    Task {
+                        await registry.refreshAll()
                     }
                 } label: {
-                    Image(systemName: zenmux.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 18, height: 18)
+                    Image(systemName: registry.isAnyRefreshing ? "arrow.clockwise.circle.fill" : "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(zenmux.isPaused ? .green : .orange)
-                .accessibilityLabel(zenmux.isPaused ? "恢复自动刷新" : "暂停自动刷新")
+                .foregroundStyle(.secondary)
+                .disabled(registry.isAnyRefreshing)
+                .accessibilityLabel("刷新所有源")
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     private func relativeTime(_ date: Date) -> String {
@@ -624,36 +618,47 @@ struct MenuGlobalHeaderView: View {
 
 // MARK: - 源配额区块
 
-/// 配额型源（Zenmux）的菜单区块：标题 + 状态 + 到期 + 进度条列表 + 指标卡片
+/// 配额型源（Zenmux）的菜单区块：标题 + 状态 + 进度条列表 + 指标卡片
 struct SourceQuotaSection: View {
     let source: any MonitoredSource
     let snapshot: QuotaSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 源头部：标题 + 状态 + 到期
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
+            // 源头部：Logo + 名称 + 状态点 + 状态文字（统一为一行）
+            HStack(spacing: 8) {
+                // Logo
+                if let logoName = source.logoImageName {
+                    Image(logoName)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                } else if let appIcon = NSApp.applicationIconImage {
+                    Image(nsImage: appIcon)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                }
+
+                // 名称
                 Text(snapshot.title)
                     .font(.subheadline.weight(.semibold))
+
                 Spacer()
-                HStack(spacing: 4) {
+
+                // 状态点 + 状态文字
+                HStack(spacing: 5) {
                     Circle()
                         .fill(snapshot.status.color)
                         .frame(width: 6, height: 6)
                     Text(snapshot.status.displayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if let expiry = snapshot.expiryText {
-                        Text(expiry)
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
 
             // 配额窗口列表（5h / 7d / ...）
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 ForEach(Array(snapshot.windows.enumerated()), id: \.offset) { _, window in
                     QuotaRow(
                         label: window.label,
@@ -667,6 +672,7 @@ struct SourceQuotaSection: View {
                     )
                 }
             }
+            .padding(.horizontal, 12)
 
             // 补充指标卡片（月度上限 / 汇率）
             if !snapshot.extraMetrics.isEmpty {
@@ -681,15 +687,24 @@ struct SourceQuotaSection: View {
                         )
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
             }
         }
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.06))  // 主源用深色背景
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
         .padding(.horizontal, 12)
-        .padding(.top, 2)
-        .padding(.bottom, 4)
+        .padding(.vertical, 6)
     }
 
     private func compactMetricCard(title: String, value: String, detail: String, icon: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Label(title, systemImage: icon)
                 .font(.caption)
                 .foregroundStyle(tint)
@@ -702,8 +717,8 @@ struct SourceQuotaSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.045))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
         )
     }
 }
@@ -782,29 +797,28 @@ struct QuotaRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                if let usdText = usedUSDText {
-                    Text(usdText)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
-            if let reset = resetsAt {
-                HStack {
-                    Text("重置 \(formatReset(reset))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                // 合并 USD 和重置时间为一行，减少视觉跳跃
+                HStack(spacing: 6) {
+                    if let usdText = usedUSDText {
+                        Text(usdText)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    if let reset = resetsAt {
+                        Text("· \(formatReset(reset))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.primary.opacity(0.10), lineWidth: 1)
         )
     }
@@ -876,41 +890,77 @@ struct SourceBalanceSection: View {
     let snapshot: BalanceSnapshot
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(alignment: .center) {
-                Label(snapshot.title, systemImage: "creditcard.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            // 源头部：Logo + 名称（与配额区块样式统一）
+            HStack(spacing: 8) {
+                // Logo
+                if let logoName = source.logoImageName {
+                    Image(logoName)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                }
+
+                // 名称
+                Text(snapshot.title)
+                    .font(.subheadline.weight(.semibold))
+
                 Spacer()
-                // 余额数字 + 明细，右对齐成组
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("\(snapshot.currencySymbol)\(snapshot.total)")
-                        .font(.subheadline.weight(.semibold))
+
+                // 状态（如有）
+                if let status = snapshot.status {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(status.color)
+                            .frame(width: 6, height: 6)
+                        Text(status.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+
+            // 余额内容：大数字 + 明细
+            VStack(alignment: .leading, spacing: 8) {
+                // 总余额（大数字）
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(snapshot.currencySymbol)
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text(snapshot.total)
+                        .font(.title2.weight(.semibold))
                         .monospacedDigit()
-                        .foregroundStyle(.primary)
-                    HStack(spacing: 4) {
-                        ForEach(Array(snapshot.breakdown.enumerated()), id: \.offset) { _, item in
-                            Text("\(item.label) \(snapshot.currencySymbol)\(item.value)")
+                }
+
+                // 明细（赠金/充值）
+                HStack(spacing: 12) {
+                    ForEach(Array(snapshot.breakdown.enumerated()), id: \.offset) { _, item in
+                        HStack(spacing: 4) {
+                            Text(item.label)
                                 .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("\(snapshot.currencySymbol)\(item.value)")
+                                .font(.caption.weight(.medium))
                                 .monospacedDigit()
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
         }
-        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(Color.primary.opacity(0.03))  // 次要源用浅色背景
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.primary.opacity(0.10), lineWidth: 1)
         )
         .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .padding(.bottom, 4)
+        .padding(.vertical, 6)
     }
 }
 
@@ -921,40 +971,51 @@ struct SourcePlaceholderSection: View {
     let source: any MonitoredSource
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(alignment: .center) {
-                Label(source.displayName, systemImage: "questionmark.circle")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if source.isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 14, height: 14)
-                } else if let err = source.lastError {
-                    Text(err)
-                        .font(.caption)
-                        .foregroundStyle(Color(red: 0.90, green: 0.34, blue: 0.31))
-                        .lineLimit(2)
-                } else {
-                    Text("未配置或无数据")
+        VStack(spacing: 10) {
+            // 图标
+            Image(systemName: source.logoImageName != nil ? "exclamationmark.circle" : "questionmark.circle")
+                .font(.system(size: 24))
+                .foregroundStyle(.secondary)
+
+            // 标题
+            Text(source.displayName)
+                .font(.subheadline.weight(.medium))
+
+            // 状态/错误/引导
+            if source.isRefreshing {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 16, height: 16)
+            } else if let err = source.lastError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(Color(red: 0.90, green: 0.34, blue: 0.31))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            } else {
+                VStack(spacing: 4) {
+                    Text("未配置 API Key")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text("前往设置添加")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
-        .padding(12)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(Color.primary.opacity(0.02))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
         .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .padding(.bottom, 4)
+        .padding(.vertical, 6)
     }
 }
 
