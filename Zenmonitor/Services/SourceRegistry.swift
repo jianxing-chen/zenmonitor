@@ -43,6 +43,12 @@ final class SourceRegistry {
         }
     }
 
+    /// 当前有可用数据的源（snapshot 非 nil）。
+    /// 用于菜单只显示已连接的源，隐藏未配置/无数据的源。
+    var dataSources: [any MonitoredSource] {
+        sources.filter { $0.snapshot != nil }
+    }
+
     /// 刷新所有已启用源（并行，互不阻断）
     func refreshAll() async {
         await withTaskGroup(of: Void.self) { group in

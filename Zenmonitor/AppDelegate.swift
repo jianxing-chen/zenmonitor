@@ -131,8 +131,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         headerItem.view = hosting
         menu.addItem(headerItem)
 
+        // 只显示有数据的源；没有任何源有数据时，才显示全部占位（引导用户配置）
+        let displaySources = registry.dataSources.isEmpty ? registry.sources : registry.dataSources
+
         // 动态构建每个启用的源区块
-        for (index, source) in registry.sources.enumerated() {
+        for (index, source) in displaySources.enumerated() {
             // 源之间有分隔线（第一个源前不加）
             if index > 0 {
                 menu.addItem(.separator())
@@ -149,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                     view = AnyView(SourceBalanceSection(source: source, snapshot: balanceSnapshot))
                 }
             } else {
-                // 无数据时显示占位（如 DeepSeek 未配置 Key）
+                // 兜底：无数据时显示占位（仅当所有源都无数据时才会走到这里）
                 view = AnyView(SourcePlaceholderSection(source: source))
             }
 
