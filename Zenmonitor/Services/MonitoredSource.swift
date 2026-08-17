@@ -19,7 +19,7 @@ import Foundation
 /// 注意：本协议不强制刷新策略（定时轮询 / 菜单打开时拉取 / 手动刷新），
 /// 由各实现方自行决定，并通过 `refresh()` 暴露「立即刷新一次」的能力。
 @MainActor
-protocol MonitoredSource {
+protocol MonitoredSource: AnyObject {
     /// 源唯一标识（如 "zenmux" / "deepseek"），用于设置存储、日志等
     var sourceID: String { get }
 
@@ -40,6 +40,9 @@ protocol MonitoredSource {
 
     /// 当前数据快照；nil 表示暂无数据（首次加载/未配置/请求失败）
     var snapshot: SourceSnapshot? { get }
+
+    /// 状态变化回调（数据/错误更新时触发），AppDelegate 用它刷新状态栏项
+    var onStateChange: (@MainActor () -> Void)? { get set }
 
     /// 立即刷新一次数据（不改变任何暂停/策略状态）
     func refresh() async

@@ -8,10 +8,15 @@
 
 import SwiftUI
 import ServiceManagement
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @State private var refreshInterval: TimeInterval
     @State private var launchAtLogin: Bool
+    /// 源卡片排列顺序（sourceID）：直接拖拽卡片调整，持久化到 menu_source_order
+    @State private var orderedSourceIDs: [String]
+    /// 当前正在被拖动的源 ID
+    @State private var draggingSourceID: String?
 
     private let settings = SettingsManager.shared
     private let registry = SourceRegistry.shared
@@ -19,6 +24,8 @@ struct SettingsView: View {
     init() {
         _refreshInterval = State(initialValue: SettingsManager.shared.refreshInterval)
         _launchAtLogin = State(initialValue: SettingsManager.shared.launchAtLogin)
+        _orderedSourceIDs = State(initialValue: SettingsManager.shared.menuOrder(
+            registrySources: SourceRegistry.shared.sources.map { $0.sourceID }))
     }
 
     var body: some View {
@@ -31,13 +38,26 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        // 源列表：遍历 registry.sources，每个源一张卡片
-                        ForEach(Array(registry.sources.enumerated()), id: \.offset) { _, source in
-                            sourceCard(for: source)
+                        // 源列表：按用户自定义顺序排列，直接拖拽卡片即可排序；
+                        // 结果持久化到 menu_source_order，下拉面板下次打开即生效，
+                        // 无需单独的排序模块
+                        ForEach(orderedSourceIDs, id: \.self) { id in
+                            if let source = registry.source(withID: id) {
+                                sourceCard(for: source)
+                                    .onDrag {
+                                        draggingSourceID = id
+                                        return NSItemProvider(object: id as NSString)
+                                    }
+                                    .onDrop(of: [.text], delegate: SourceCardDropDelegate(
+                                        targetID: id,
+                                        orderedIDs: $orderedSourceIDs,
+                                        draggingID: $draggingSourceID,
+                                        onReorder: { settings.setMenuOrder($0) }
+                                    ))
+                            }
                         }
 
-                        // 通用设置
-                        refreshSection
+                        // 通用设置（刷新间隔 + 开机启动，合并为一张卡片）
                         generalSection
                     }
                     .padding(.horizontal, 14)
@@ -64,16 +84,18 @@ struct SettingsView: View {
             ZenmuxSourceCard()
         case "deepseek":
             DeepSeekSourceCard()
+        case "kimi":
+            KimiSourceCard()
         default:
             // 未来新源的通用卡片
             GenericSourceCard(source: source)
         }
     }
 
-    // MARK: - 刷新间隔
+    // MARK: - 通用设置（刷新间隔 + 开机启动合并一张卡，Divider 分隔）
 
-    private var refreshSection: some View {
-        sectionCard {
+    private var generalSection: some View {
+        VStack(spacing: 10) {
             HStack {
                 Text("自动刷新间隔")
                     .font(.subheadline.weight(.medium))
@@ -95,13 +117,10 @@ struct SettingsView: View {
                     }
                 }
             }
-        }
-    }
 
-    // MARK: - 通用设置
+            Divider()
+                .opacity(0.5)
 
-    private var generalSection: some View {
-        sectionCard {
             HStack {
                 Text("登录时自动启动")
                     .font(.subheadline.weight(.medium))
@@ -119,11 +138,13 @@ struct SettingsView: View {
                                 try SMAppService.mainApp.unregister()
                             }
                         } catch {
-                            print("自启动设置失败: \(error)")
+                            // 注册/注销失败时开关状态会在下次打开设置时回读真实值，
+                            // 不弹窗打扰；错误原因可在控制台日志查看
                         }
                     }
             }
         }
+        .settingsCard()
     }
 
     // MARK: - 底部栏
@@ -141,17 +162,6 @@ struct SettingsView: View {
             }
             .buttonStyle(SettingsProminentButtonStyle())
         }
-    }
-
-    @ViewBuilder
-    private func sectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(12)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(SettingsPalette.border, lineWidth: 1)
-            )
     }
 }
 
@@ -171,13 +181,13 @@ struct ZenmuxSourceCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 头部：Logo + 标题 + 域名选择
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题 + 域名选择（透明底 Logo，与下拉面板共用 PanelLogo）
             HStack(spacing: 10) {
-                if let appIcon = NSApp.applicationIconImage {
-                    Image(nsImage: appIcon)
+                if let logo = PanelLogo.zenmux {
+                    Image(nsImage: logo)
                         .resizable()
-                        .frame(width: 32, height: 32)
+                        .frame(width: 26, height: 26)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Zenmux Platform API")
@@ -206,56 +216,37 @@ struct ZenmuxSourceCard: View {
             // API Key 输入
             HStack(spacing: 10) {
                 SecureField("请输入 Zenmux Management API Key", text: $apiKeyInput)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(SettingsPalette.border, lineWidth: 1)
-                    )
-                    .font(.callout)
+                    .keyFieldStyle()
 
                 Button {
                     persistAPIKey(forceFetch: true)
-                    showKeySaved = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        showKeySaved = false
-                    }
+                    flashSavedBadge()
                 } label: {
-                    Label("保存", systemImage: "arrow.down.circle.fill")
+                    // 输入框为空时按钮变为「删除」，允许清除已保存的 Key
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
                 }
                 .buttonStyle(SettingsProminentButtonStyle())
-                .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
-
-                if showKeySaved {
-                    statusBadge(title: "已保存", icon: "checkmark.circle.fill", tint: .green)
-                        .transition(.opacity)
-                }
             }
-            .animation(.easeOut(duration: 0.2), value: showKeySaved)
 
-            // 底部：控制台链接 + 状态
-            HStack {
-                Link("前往 Zenmux 控制台创建 Key", destination: apiDomain.consoleURL)
-                    .font(.subheadline)
-                Spacer()
-                statusBadge(
-                    title: settings.apiKey?.isEmpty == false ? "已连接" : "未配置",
-                    icon: "bolt.fill",
-                    tint: settings.apiKey?.isEmpty == false ? .green : .secondary
-                )
-            }
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
+            SourceCardFooter(
+                sourceID: "zenmux",
+                consoleURL: apiDomain.consoleURL,
+                consoleHint: "前往 Zenmux 控制台创建 Key",
+                badge: feedbackOrStatusBadge
+            )
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(SettingsPalette.border, lineWidth: 1)
-        )
+        .settingsCard()
+        .animation(.easeOut(duration: 0.2), value: showKeySaved)
+    }
+
+    /// 输入框去空白后是否为空（空 = 删除 Key 操作）
+    private var keyInputIsEmpty: Bool {
+        apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func persistAPIKey(forceFetch: Bool) {
@@ -267,24 +258,24 @@ struct ZenmuxSourceCard: View {
         apiService.settingsDidChange(forceFetch: forceFetch)
     }
 
-    private func statusBadge(title: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .bold))
-            Text(title)
-                .font(.caption.weight(.semibold))
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复连接状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
         }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule(style: .continuous)
-                .fill(SettingsPalette.fill)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .stroke(SettingsPalette.border, lineWidth: 1)
-        )
+    }
+
+    /// 状态徽章：保存瞬间显示「已保存/已删除」，1.5 秒后恢复连接状态，
+    /// 反馈落在底部常驻徽章上，不再挤占输入框行宽度
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        let configured = settings.apiKey?.isEmpty == false
+        return StatusBadge(title: configured ? "已连接" : "未配置",
+                           icon: "bolt.fill", tint: configured ? .green : .secondary)
     }
 }
 
@@ -300,13 +291,18 @@ struct DeepSeekSourceCard: View {
         _apiKeyInput = State(initialValue: SettingsManager.shared.deepseekAPIKey ?? "")
     }
 
+    /// 输入框去空白后是否为空（空 = 删除 Key 操作）
+    private var keyInputIsEmpty: Bool {
+        apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             // 头部：Logo + 标题
             HStack(spacing: 10) {
                 Image("DeepSeekLogo")
                     .resizable()
-                    .frame(width: 32, height: 32)
+                    .frame(width: 24, height: 24)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("DeepSeek API")
                         .font(.headline)
@@ -320,61 +316,256 @@ struct DeepSeekSourceCard: View {
             // API Key 输入
             HStack(spacing: 10) {
                 SecureField("请输入 DeepSeek API Key（sk-...）", text: $apiKeyInput)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(SettingsPalette.border, lineWidth: 1)
-                    )
-                    .font(.callout)
+                    .keyFieldStyle()
 
                 Button {
                     let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    settings.deepseekAPIKey = trimmed.isEmpty ? nil : trimmed
-                    UserDefaults.standard.removeObject(forKey: "deepseek_cached_balance")
-                    UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
-                    showKeySaved = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        showKeySaved = false
+                    if trimmed.isEmpty {
+                        // 删除 Key：置空配置并立即清空余额数据、缓存与用量采样历史
+                        settings.deepseekAPIKey = nil
+                        DeepSeekAPIService.shared.invalidateForMissingKey()
+                    } else {
+                        settings.deepseekAPIKey = trimmed
+                        UserDefaults.standard.removeObject(forKey: "deepseek_cached_balance")
+                        UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
                     }
+                    flashSavedBadge()
                 } label: {
-                    Label("保存", systemImage: "arrow.down.circle.fill")
+                    // 输入框为空时按钮变为「删除」，允许清除已保存的 Key
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
                 }
                 .buttonStyle(SettingsProminentButtonStyle())
-
-                if showKeySaved {
-                    statusBadge(title: "已保存", icon: "checkmark.circle.fill", tint: .green)
-                        .transition(.opacity)
-                }
             }
-            .animation(.easeOut(duration: 0.2), value: showKeySaved)
 
-            // 底部：控制台链接 + 状态
-            HStack {
-                Link("前往 DeepSeek 控制台创建 Key", destination: URL(string: "https://platform.deepseek.com/api_keys")!)
-                    .font(.subheadline)
-                Spacer()
-                statusBadge(
-                    title: settings.deepseekAPIKey?.isEmpty == false ? "已配置" : "未配置",
-                    icon: "bolt.fill",
-                    tint: settings.deepseekAPIKey?.isEmpty == false ? .green : .secondary
-                )
-            }
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
+            SourceCardFooter(
+                sourceID: "deepseek",
+                consoleURL: URL(string: "https://platform.deepseek.com/api_keys")!,
+                consoleHint: "前往 DeepSeek 控制台创建 Key",
+                badge: feedbackOrStatusBadge
+            )
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(SettingsPalette.border, lineWidth: 1)
-        )
+        .settingsCard()
+        .animation(.easeOut(duration: 0.2), value: showKeySaved)
     }
 
-    private func statusBadge(title: String, icon: String, tint: Color) -> some View {
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        let configured = settings.deepseekAPIKey?.isEmpty == false
+        return StatusBadge(title: configured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - Kimi 源配置卡片
+
+struct KimiSourceCard: View {
+    @State private var apiKeyInput: String
+    @State private var showKeySaved = false
+
+    private let settings = SettingsManager.shared
+
+    init() {
+        _apiKeyInput = State(initialValue: SettingsManager.shared.kimiAPIKey ?? "")
+    }
+
+    /// 输入框去空白后是否为空（空 = 删除 Key 操作）
+    private var keyInputIsEmpty: Bool {
+        apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题
+            HStack(spacing: 10) {
+                Image("KimiLogo")
+                    .resizable()
+                    .frame(width: 20, height: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Kimi Code API")
+                        .font(.headline)
+                        .foregroundStyle(SettingsPalette.primaryText)
+                    Text("用于下拉面板显示 5 小时/周配额，菜单打开时拉取。")
+                        .font(.subheadline)
+                        .foregroundStyle(SettingsPalette.secondaryText)
+                }
+            }
+
+            // API Key 输入
+            HStack(spacing: 10) {
+                SecureField("请输入 Kimi Code API Key（sk-kimi-...）", text: $apiKeyInput)
+                    .keyFieldStyle()
+
+                Button {
+                    let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        // 删除 Key：置空配置并立即清空配额数据与缓存
+                        settings.kimiAPIKey = nil
+                        KimiCodeAPIService.shared.invalidateForMissingKey()
+                    } else {
+                        settings.kimiAPIKey = trimmed
+                        UserDefaults.standard.removeObject(forKey: "kimi_cached_usages")
+                        UserDefaults.standard.removeObject(forKey: "kimi_cached_updated")
+                        // 保存后立即拉取一次，便于下次打开菜单即有数据
+                        Task { await KimiCodeAPIService.shared.refresh() }
+                    }
+                    flashSavedBadge()
+                } label: {
+                    // 输入框为空时按钮变为「删除」，允许清除已保存的 Key
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                .buttonStyle(SettingsProminentButtonStyle())
+            }
+
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
+            SourceCardFooter(
+                sourceID: "kimi",
+                consoleURL: URL(string: "https://www.kimi.com/code/console")!,
+                consoleHint: "前往 Kimi Code 控制台创建 Key",
+                badge: feedbackOrStatusBadge
+            )
+        }
+        .settingsCard()
+        .animation(.easeOut(duration: 0.2), value: showKeySaved)
+    }
+
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        let configured = settings.kimiAPIKey?.isEmpty == false
+        return StatusBadge(title: configured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - 通用源配置卡片（未来新源）
+
+struct GenericSourceCard: View {
+    let source: any MonitoredSource
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                if let logoName = source.logoImageName {
+                    Image(logoName)
+                        .resizable()
+                        .frame(width: 28, height: 28)
+                } else {
+                    Image(systemName: "app.fill")
+                        .resizable()
+                        .frame(width: 28, height: 28)
+                        .foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.displayName)
+                        .font(.headline)
+                        .foregroundStyle(SettingsPalette.primaryText)
+                    Text("该源暂无专属配置界面")
+                        .font(.subheadline)
+                        .foregroundStyle(SettingsPalette.secondaryText)
+                }
+            }
+        }
+        .settingsCard()
+    }
+}
+
+// MARK: - 源卡片拖拽排序
+
+/// 源卡片拖拽排序代理：拖动卡片悬停到目标位置时即换位（无需等松手），
+/// 每次换位都持久化到 menu_source_order，下拉面板下次打开即按新顺序渲染
+private struct SourceCardDropDelegate: DropDelegate {
+    let targetID: String
+    @Binding var orderedIDs: [String]
+    @Binding var draggingID: String?
+    let onReorder: ([String]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging = draggingID, dragging != targetID,
+              let from = orderedIDs.firstIndex(of: dragging),
+              let to = orderedIDs.firstIndex(of: targetID) else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            orderedIDs.move(fromOffsets: IndexSet(integer: from),
+                            toOffset: to > from ? to + 1 : to)
+        }
+        onReorder(orderedIDs)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingID = nil
+        return true
+    }
+}
+
+// MARK: - 共享组件
+
+/// 源卡片底部行：菜单栏显示开关（左）+ 控制台图标链接 + 状态徽章（右）。
+/// 把原先「Toggle 独占一行 + 链接/徽章一行」的两行结构压缩为一行。
+private struct SourceCardFooter: View {
+    let sourceID: String
+    let consoleURL: URL
+    let consoleHint: String
+    let badge: StatusBadge
+
+    var body: some View {
+        HStack(spacing: 8) {
+            StatusBarToggle(sourceID: sourceID)
+
+            Spacer()
+
+            // 控制台链接收窄为图标，完整文案移入悬浮提示
+            Link(destination: consoleURL) {
+                Image(systemName: "safari")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(SettingsPalette.secondaryText)
+            }
+            .help(consoleHint)
+
+            badge
+        }
+    }
+}
+
+/// 状态徽章（胶囊）：源连接状态与保存瞬时反馈共用
+private struct StatusBadge: View {
+    let title: String
+    let icon: String
+    let tint: Color
+
+    var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .bold))
@@ -395,40 +586,29 @@ struct DeepSeekSourceCard: View {
     }
 }
 
-// MARK: - 通用源配置卡片（未来新源）
+/// 状态栏显示开关：持久化到 UserDefaults，变更后通知 AppDelegate 重建菜单栏项
+private struct StatusBarToggle: View {
+    let sourceID: String
+    @State private var isOn: Bool
 
-struct GenericSourceCard: View {
-    let source: any MonitoredSource
+    private let settings = SettingsManager.shared
+
+    init(sourceID: String) {
+        self.sourceID = sourceID
+        _isOn = State(initialValue: SettingsManager.shared.statusBarEnabled(for: sourceID))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                if let logoName = source.logoImageName {
-                    Image(logoName)
-                        .resizable()
-                        .frame(width: 32, height: 32)
-                } else {
-                    Image(systemName: "app.fill")
-                        .resizable()
-                        .frame(width: 32, height: 32)
-                        .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.displayName)
-                        .font(.headline)
-                        .foregroundStyle(SettingsPalette.primaryText)
-                    Text("该源暂无专属配置界面")
-                        .font(.subheadline)
-                        .foregroundStyle(SettingsPalette.secondaryText)
-                }
-            }
+        Toggle(isOn: $isOn) {
+            Text("在菜单栏显示")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(SettingsPalette.primaryText)
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(SettingsPalette.border, lineWidth: 1)
-        )
+        .toggleStyle(.switch)
+        .onChange(of: isOn) { _, newValue in
+            settings.setStatusBarEnabled(newValue, for: sourceID)
+            NotificationCenter.default.post(name: .statusBarSettingsChanged, object: nil)
+        }
     }
 }
 
@@ -437,8 +617,48 @@ struct GenericSourceCard: View {
 private enum SettingsPalette {
     static let primaryText = Color(nsColor: .labelColor)
     static let secondaryText = Color(nsColor: .secondaryLabelColor)
-    static let fill = Color.white.opacity(0.08)
-    static let border = Color.white.opacity(0.16)
+    /// 与下拉面板统一：primary 透明度随明暗模式自适应
+    /// （原白色透明度写法在浅色模式下几乎不可见）
+    static let fill = Color.primary.opacity(0.06)
+    static let fieldFill = Color.primary.opacity(0.05)
+    static let border = Color.primary.opacity(0.12)
+}
+
+/// 卡片容器：统一所有设置卡片的内边距、磨砂背景与描边
+private struct SettingsCardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(SettingsPalette.border, lineWidth: 1)
+            )
+    }
+}
+
+/// API Key 输入框统一样式
+private struct KeyFieldModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(SettingsPalette.fieldFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(SettingsPalette.border, lineWidth: 1)
+            )
+            .font(.callout)
+    }
+}
+
+private extension View {
+    func settingsCard() -> some View { modifier(SettingsCardModifier()) }
+    func keyFieldStyle() -> some View { modifier(KeyFieldModifier()) }
 }
 
 private struct SettingsProminentButtonStyle: ButtonStyle {

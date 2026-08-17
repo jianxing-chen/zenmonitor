@@ -275,13 +275,13 @@ final class ZenmuxAPIService: MonitoredSource {
     /// 把 Zenmux 原始订阅数据转换为通用配额快照
     private func makeQuotaSnapshot(from data: ZenmuxSubscriptionData) -> QuotaSnapshot {
         QuotaSnapshot(
-            title: "Zenmux \(data.plan.tier.capitalized)",
+            title: "Zenmux",
             status: mapStatus(data.account_status),
             expiryText: makeExpiryText(data.plan.expires_at),
             windows: [
                 makeWindowData(
                     id: "5h",
-                    label: "5 小时用量",
+                    label: "5H",
                     icon: "clock",
                     window: data.quota_5_hour,
                     duration: 5 * 3600,
@@ -289,7 +289,7 @@ final class ZenmuxAPIService: MonitoredSource {
                 ),
                 makeWindowData(
                     id: "7d",
-                    label: "7 天用量",
+                    label: "7D",
                     icon: "calendar",
                     window: data.quota_7_day,
                     duration: 7 * 24 * 3600,

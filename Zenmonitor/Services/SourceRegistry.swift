@@ -5,7 +5,7 @@
 //  监控源注册中心
 //  集中管理所有已接入的监控源，向 AppDelegate / 设置界面提供统一访问入口。
 //
-//  当前版本内置 Zenmux 与 DeepSeek 两个源；
+//  当前版本内置 Zenmux、DeepSeek、Kimi 三个源；
 //  未来支持「随时添加新源」时，可扩展为动态注册/注销与用户启用/禁用列表。
 //
 
@@ -21,10 +21,11 @@ final class SourceRegistry {
     private(set) var sources: [any MonitoredSource] = []
 
     private init() {
-        // 内置源注册：Zenmux 为主（配额型），DeepSeek 为辅（余额型）
+        // 内置源注册：Zenmux 为主（配额型），DeepSeek（余额型）、Kimi（配额型）为辅
         sources = [
             ZenmuxAPIService.shared,
-            DeepSeekAPIService.shared
+            DeepSeekAPIService.shared,
+            KimiCodeAPIService.shared
         ]
     }
 
@@ -33,20 +34,11 @@ final class SourceRegistry {
         sources.first { $0.sourceID == id }
     }
 
-    /// 主源：用于菜单栏状态栏显示的配额型源（当前固定为 Zenmux）
-    /// 未来支持多配额源时，改为用户可配置。
-    var primaryQuotaSource: (any MonitoredSource)? {
-        sources.first { source in
-            guard let snapshot = source.snapshot else { return false }
-            if case .quota = snapshot { return true }
-            return false
-        }
-    }
-
-    /// 当前有可用数据的源（snapshot 非 nil）。
-    /// 用于菜单只显示已连接的源，隐藏未配置/无数据的源。
-    var dataSources: [any MonitoredSource] {
-        sources.filter { $0.snapshot != nil }
+    /// 按用户自定义排序的源列表（下拉面板渲染顺序）；
+    /// 未配置过排序时保持注册表默认顺序（Zenmux → DeepSeek → Kimi）
+    var orderedSources: [any MonitoredSource] {
+        let order = SettingsManager.shared.menuOrder(registrySources: sources.map { $0.sourceID })
+        return order.compactMap { id in sources.first { $0.sourceID == id } }
     }
 
     /// 刷新所有已启用源（并行，互不阻断）

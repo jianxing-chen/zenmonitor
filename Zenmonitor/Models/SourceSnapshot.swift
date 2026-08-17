@@ -114,6 +114,11 @@ struct BalanceSnapshot {
     let breakdown: [(label: String, value: String)]
     /// 状态（可选，如余额不足预警）
     let status: StatusIndicator?
+    /// 今日用量文本（可选，含货币符号，如 "¥1.23"）。
+    /// 余额型源无官方时间段用量接口时，可由本地余额差值推算。
+    var todayUsageText: String? = nil
+    /// 今日用量补充说明（可选，如 "自 08:00 起"，标注统计起点）
+    var todayUsageDetail: String? = nil
 }
 
 // MARK: - 统一源快照

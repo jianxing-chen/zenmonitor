@@ -8,6 +8,11 @@
 
 import Foundation
 
+extension Notification.Name {
+    /// 状态栏显示开关变更（设置面板 Toggle 触发），AppDelegate 监听后重建状态栏项
+    static let statusBarSettingsChanged = Notification.Name("ZenmonitorStatusBarSettingsChanged")
+}
+
 /// Zenmux API 可用域名。Zenmux 同时提供 zenmux.ai 与 zenmux.dev 两个入口，
 /// 用户可在设置中切换，便于在不同网络环境/区域下选择可达的域名。
 enum ZenmuxAPIDomain: String, CaseIterable, Codable {
@@ -35,6 +40,9 @@ final class SettingsManager {
         static let cachedSubscriptionData = "cached_subscription_data"
         static let cachedLastUpdated = "cached_last_updated"
         static let deepseekAPIKey = "deepseek_api_key"
+        static let kimiAPIKey = "kimi_api_key"
+        static let statusBarPrefix = "statusbar_enabled_"
+        static let menuOrder = "menu_source_order"
         static let apiDomain = "api_domain"
     }
 
@@ -81,6 +89,54 @@ final class SettingsManager {
     var deepseekAPIKey: String? {
         get { defaults.string(forKey: Keys.deepseekAPIKey) }
         set { defaults.set(newValue, forKey: Keys.deepseekAPIKey) }
+    }
+
+    // MARK: - Kimi Code API Key
+
+    /// Kimi Code API Key（sk-kimi-...），与推理共用同一把 Key，用于查询订阅配额。
+    /// 与 Zenmux / DeepSeek Key 相互独立。
+    var kimiAPIKey: String? {
+        get { defaults.string(forKey: Keys.kimiAPIKey) }
+        set { defaults.set(newValue, forKey: Keys.kimiAPIKey) }
+    }
+
+    // MARK: - 状态栏显示开关
+
+    /// 某源是否在菜单栏拥有独立状态栏项。
+    /// 默认仅 Zenmux 开启（保持历史行为）；显式设置过的值优先。
+    func statusBarEnabled(for sourceID: String) -> Bool {
+        if let stored = defaults.object(forKey: Keys.statusBarPrefix + sourceID) as? Bool {
+            return stored
+        }
+        return sourceID == "zenmux"
+    }
+
+    func setStatusBarEnabled(_ enabled: Bool, for sourceID: String) {
+        defaults.set(enabled, forKey: Keys.statusBarPrefix + sourceID)
+    }
+
+    // MARK: - 下拉面板区块排序
+
+    /// 用户自定义的源排序（sourceID 列表）；从未设置过时返回 nil，
+    /// 由调用方回退注册表默认顺序（Zenmux → DeepSeek → Kimi）
+    var storedMenuOrder: [String]? {
+        defaults.stringArray(forKey: Keys.menuOrder)
+    }
+
+    /// 下拉面板区块排序（完整且合法）：以用户自定义顺序为主，
+    /// 过滤已不存在的源、补齐未列入的新源（追加到尾部），
+    /// 保证任意时刻返回值与注册表源集一致
+    func menuOrder(registrySources: [String]) -> [String] {
+        let stored = storedMenuOrder ?? []
+        var ordered = stored.filter { registrySources.contains($0) }
+        for id in registrySources where !ordered.contains(id) {
+            ordered.append(id)
+        }
+        return ordered
+    }
+
+    func setMenuOrder(_ order: [String]) {
+        defaults.set(order, forKey: Keys.menuOrder)
     }
 
     // MARK: - UserDefaults 操作

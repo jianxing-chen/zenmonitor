@@ -5,8 +5,9 @@
 //  DeepSeek 余额查询 API 客户端
 //  接口：GET https://api.deepseek.com/user/balance
 //
-//  设计：余额变化低频，采用「菜单打开时拉取」策略，
-//  不接入 ProcessMonitor 条件刷新，不做后台轮询，零常驻开销。
+//  设计：余额变化低频，采用「菜单打开时拉取 + 整点静默采样」策略；
+//  整点采样用于本地余额差值统计今日用量（DeepSeekUsageStore），
+//  不接入 ProcessMonitor 条件刷新，开销可忽略。
 //
 
 import Foundation
@@ -43,6 +44,9 @@ final class DeepSeekAPIService: MonitoredSource {
     private let baseURL = URL(string: "https://api.deepseek.com/user/balance")!
     private let cacheKey = "deepseek_cached_balance"
 
+    /// 今日用量本地统计（余额差值推算）
+    private let usageStore = DeepSeekUsageStore()
+
     /// 最近一次成功获取的余额数据
     var balanceData: DeepSeekBalanceResponse?
     /// 最近一次错误文案（成功后清空）
@@ -52,8 +56,39 @@ final class DeepSeekAPIService: MonitoredSource {
     /// 是否正在请求
     private(set) var isRefreshing = false
 
+    /// MonitoredSource 协议：状态变化回调（AppDelegate 用于刷新状态栏项）
+    @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
+
+    private func notifyStateChange() {
+        onStateChange?()
+    }
+
     private init() {
         restoreCachedBalance()
+        startHourlySampling()
+    }
+
+    // MARK: - 整点采样（今日用量统计）
+
+    /// 对齐到下一个整点后，每小时静默拉取一次余额。
+    /// 整点采样保证 00:00 后首次采样即建立新日基线，精确区分日期。
+    /// 未配置 Key 时 fetchBalance 内部静默跳过，无额外开销。
+    private func startHourlySampling() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                let delay = Self.secondsUntilNextHour()
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self else { return }
+                await self.fetchBalance()
+            }
+        }
+    }
+
+    /// 距下一个整点的秒数（1~3600）
+    private static func secondsUntilNextHour() -> TimeInterval {
+        let comps = Calendar.current.dateComponents([.minute, .second], from: Date())
+        let elapsed = (comps.minute ?? 0) * 60 + (comps.second ?? 0)
+        return TimeInterval(3600 - elapsed)
     }
 
     // MARK: - 缓存恢复/保存
@@ -74,15 +109,23 @@ final class DeepSeekAPIService: MonitoredSource {
 
     // MARK: - 请求
 
+    /// Key 已删除/未配置：清空余额数据、缓存与用量采样历史。
+    /// 设置界面删除 Key 时直接调用，无需等下次拉取即生效。
+    func invalidateForMissingKey() {
+        if balanceData != nil { balanceData = nil }
+        UserDefaults.standard.removeObject(forKey: cacheKey)
+        UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
+        lastError = nil
+        usageStore.reset()
+        notifyStateChange()
+    }
+
     /// 拉取余额。无 Key 时静默置空（不报错），便于用户未配置时菜单不显示该区块。
     func fetchBalance() async {
         guard let apiKey = SettingsManager.shared.deepseekAPIKey,
               !apiKey.isEmpty else {
             // 未配置 Key：清空数据与缓存，不当作错误
-            if balanceData != nil { balanceData = nil }
-            UserDefaults.standard.removeObject(forKey: cacheKey)
-            UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
-            lastError = nil
+            invalidateForMissingKey()
             return
         }
 
@@ -108,10 +151,17 @@ final class DeepSeekAPIService: MonitoredSource {
             lastError = nil
             lastUpdated = Date()
             saveCachedBalance()
+            // 采样入账：记录当前余额用于今日用量差值统计（Key 更换时 store 自动清空历史）
+            if let info = decoded.balance_infos.first {
+                usageStore.record(total: info.total, keyFingerprint: DeepSeekUsageStore.fingerprint(of: apiKey))
+            }
+            notifyStateChange()
         } catch let error as DeepSeekAPIError {
             lastError = error.localizedDescription
+            notifyStateChange()
         } catch {
             lastError = DeepSeekAPIError.networkError(error).localizedDescription
+            notifyStateChange()
         }
     }
 
@@ -137,7 +187,7 @@ final class DeepSeekAPIService: MonitoredSource {
     private func makeBalanceSnapshot(from data: DeepSeekBalanceResponse) -> BalanceSnapshot {
         // 取第一个币种（通常 CNY）；多币种场景后续可扩展为多行展示
         let info = data.balance_infos[0]
-        return BalanceSnapshot(
+        var snapshot = BalanceSnapshot(
             title: "DeepSeek 余额",
             currencySymbol: info.symbol,
             total: String(format: "%.2f", info.total),
@@ -147,5 +197,15 @@ final class DeepSeekAPIService: MonitoredSource {
             ],
             status: data.is_available ? .healthy : .limited
         )
+        // 今日用量：本地余额差值推算，无当日采样记录时保持 nil（UI 不渲染该行）
+        if let stats = usageStore.todayStats() {
+            snapshot.todayUsageText = info.symbol + String(format: "%.2f", stats.usage)
+            snapshot.todayUsageDetail = "自 \(Self.hourMinuteFmt.string(from: stats.since)) 起"
+        }
+        return snapshot
     }
+
+    private static let hourMinuteFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
+    }()
 }
