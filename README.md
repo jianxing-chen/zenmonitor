@@ -9,12 +9,15 @@ macOS 菜单栏多源监控工具，实时显示各类 API 服务的用量配额
 
 ## ✨ 功能特性
 
-- **多源监控**：支持 Zenmux（配额型）、DeepSeek（余额型）等多个 API 服务，可随时扩展新源
-- **双进度条**：菜单栏直接显示主源 5 小时 / 7 天滚动窗口用量，菜单栏深浅随用量变化，下拉面板颜色随用量变化（蓝→橙→红），带精确百分比
-- **重置时间百分比**：标签后紧跟当前时间在滚动周期内的占比（如「5 小时用量 · 45%」），纯时间标度与用量进度相互独立
-- **7 天用量预测阴影**：7 天进度条上叠加半透明阴影，表示「若 5 小时用量被用满，7 天用量将达到的位置」——当前 7d 用量 + 5h 剩余可用量，露出主条右侧部分即预测增量；阴影颜色按预测值判档，提前预警（预测进入中/高档时阴影提前变橙/红）；5h 用满时预测=实际，阴影与主条重合不可见
-- **DeepSeek 余额**：下拉面板独立区块显示 DeepSeek 账户余额（总余额、赠金、充值明细，支持 CNY/USD 多币种）；菜单打开时拉取，仅在设置中配置 DeepSeek API Key 后显示
-- **下拉详情**：点击菜单栏图标展开完整用量面板（flows、USD、汇率、月度上限、到期时间）
+- **多源监控**：支持 Zenmux（配额型）、DeepSeek（余额型）、Kimi Code（配额型）三个 API 服务，架构可随时扩展新源
+- **每源独立状态栏项**：各源可在设置中独立开关自己的菜单栏项——Zenmux 双进度条、DeepSeek 余额文本（¥xx.xx）、Kimi 进度条+品牌徽章；全部关闭时保留 App Logo 入口，永不失联
+- **多显示器自适应**：状态栏图标采用系统模板着色，每块屏幕的菜单栏深/浅外观自动适配，无需手动切换
+- **重置时间提示**：配额窗口行内显示重置时间（如「5H · Sun 08/17 03:00」），下拉面板颜色随用量变化（蓝→橙→红）
+- **7 天用量预测阴影**：7 天进度条上叠加半透明阴影，表示「若 5 小时用量被用满，7 天用量将达到的位置」；阴影颜色按预测值判档，提前预警
+- **DeepSeek 余额与今日用量**：下拉面板显示总余额与本地差值推算的今日用量（整点采样，充值自动重置基线）
+- **Kimi Code 配额**：5 小时滚动频控 + 7 天周额度双窗口，品牌 Logo 标识
+- **下拉详情可折叠**：Zenmux 区块默认只展示核心指标，一键展开 flows / USD / 月度上限 / 汇率完整信息
+- **区块排序**：在设置面板直接拖动源卡片，即可调整下拉面板各区块顺序，即时生效
 - **暂停/继续**：菜单内一键暂停或恢复自动刷新
 - **本地设置保存**：API Key 与所有配置持久化在应用本地
 - **纯菜单栏运行**：无 Dock 图标，无窗口，极低资源占用
@@ -47,23 +50,23 @@ Cmd+R 运行，Cmd+B 编译。
 ## ⚙️ 配置
 
 1. 点击菜单栏图标 → **设置**
-2. 配置 Zenmux API Key：
-   - 前往 [Zenmux 控制台](https://zenmux.ai/platform/management) 创建 **Management API Key**
-   - 粘贴到设置窗口 → 保存
-3. （可选）配置 DeepSeek API Key：
-   - 前往 [DeepSeek 控制台](https://platform.deepseek.com/api_keys) 创建 API Key
-   - 粘贴到设置窗口 → 保存
+2. 配置各源 API Key（每张源卡片还可开关「在菜单栏显示」并拖动排序）：
+   - **Zenmux**：[控制台](https://zenmux.ai/platform/management) 创建 Management API Key
+   - **DeepSeek**：[控制台](https://platform.deepseek.com/api_keys) 创建 API Key（用于余额查询与今日用量统计）
+   - **Kimi Code**：[控制台](https://www.kimi.com/code/console) 创建 API Key（sk-kimi- 开头）
+3. 所有 Key 仅保存在本机（UserDefaults 明文，详见 DEVELOPMENT 权衡说明），不上传任何服务器
 
 ## 🏗️ 架构
 
 ```
-MonitoredSource 协议（sourceID/displayName/snapshot/refresh）
+MonitoredSource 协议（sourceID/displayName/snapshot/refresh/onStateChange）
         ↓
 SourceSnapshot 统一快照（.quota / .balance）
         ↓
-SourceRegistry 注册中心（sources/primaryQuotaSource/refreshAll）
+SourceRegistry 注册中心（sources/orderedSources/refreshAll）
         ↓
-UI 泛型组件（SourceQuotaSection/SourceBalanceSection/SourceCard）
+状态栏：每源独立 NSStatusItem + 模板图自绘位图
+下拉面板：SourceQuotaSection / SourceBalanceSection 按用户排序渲染
 ```
 
 **添加新源**：
@@ -83,7 +86,7 @@ UI 泛型组件（SourceQuotaSection/SourceBalanceSection/SourceCard）
 
 - 内存：空闲 ~20MB，菜单打开时 ~30MB
 - CPU：空闲时 < 0.1%，无轮询时 ≈ 0%
-- 网络：主源每 60s 一次小请求，DeepSeek 菜单打开时拉取
+- 网络：Zenmux 按设置间隔自动刷新；DeepSeek/Kimi 菜单打开时拉取，另有 DeepSeek 整点余额采样
 
 ## 🤝 贡献
 

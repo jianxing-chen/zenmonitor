@@ -9,8 +9,6 @@
 
 import AppKit
 import SwiftUI
-import CoreImage
-import CoreImage.CIFilterBuiltins
 
 // MARK: - 用量配色（下拉面板统一蓝→橙→红三档）
 
@@ -705,7 +703,10 @@ func renderStatusBarBitmap(of view: NSView, size: NSSize) -> NSImage {
 
     let image = NSImage(size: size)
     image.addRepresentation(rep)
-    image.isTemplate = false
+    // 模板图（DEVELOPMENT.md §5.1 双屏自适应方案）：内容统一画纯黑+alpha，
+    // 系统按「状态项所在菜单栏屏幕」的外观独立 tint（每屏各有渲染管线），
+    // 浅色屏映射为黑色、深色屏自动白色，多显示器独立外观无需任何手动判定
+    image.isTemplate = true
     return image
 }
 
@@ -923,9 +924,8 @@ final class StatusBarView: NSView, StatusItemRenderable {
 
     /// 无配额数据时的占位：居中绘制 App Logo（已抠去底板并裁剪到剪影包围盒）
     private func drawLogo() {
-        // 深色菜单栏画白色版本，浅色菜单栏画黑色版本
-        let icon = isDarkContent ? Self.appLogoInverted : Self.appLogo
-        guard let icon else { return }
+        // 黑色剪影 + 模板 tint：深/浅色菜单栏由系统自动映射，无需反色版
+        guard let icon = Self.appLogo else { return }
         // 按宽高比适配，高度占满可用区域
         let h = Self.logoDrawHeight
         let w = h * icon.size.width / max(icon.size.height, 1)
@@ -1063,24 +1063,13 @@ final class StatusBarView: NSView, StatusItemRenderable {
         return NSImage(cgImage: cropped, size: NSSize(width: cropRect.width, height: cropRect.height))
     }
 
-    /// Logo 白色版（深色菜单栏用）：黑色图案经 CoreImage 反色，alpha 通道保持不变
-    private static let appLogoInverted: NSImage? = {
-        guard let black = appLogo,
-              let tiff = black.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let cg = rep.cgImage else { return nil }
-        let filter = CIFilter.colorInvert()
-        filter.inputImage = CIImage(cgImage: cg)
-        guard let out = filter.outputImage,
-              let outCG = CIContext().createCGImage(out, from: out.extent) else { return nil }
-        return NSImage(cgImage: outCG, size: black.size)
-    }()
+    /// Logo 白色版已废弃：模板 tint 方案下无需反色缓存（历史 CoreImage 反色实现已随方案回归移除）
 
     /// 源标识徽章：Kimi 品牌 Logo 单色剪影（呼应设置面板/下拉面板的品牌形象），
-    /// 浅色菜单栏黑色、深色菜单栏白色，与进度条同墨水体系
+    /// 黑色剪影交给模板 tint，随所在屏幕菜单栏外观自动黑/白
     private func drawSourceBadge(palette: Palette) {
-        let icon = isDarkContent ? Self.kimiBadgeLogoInverted : Self.kimiBadgeLogo
-        guard let icon else { return }
+        // 黑色剪影 + 模板 tint，同 drawLogo
+        guard let icon = Self.kimiBadgeLogo else { return }
         let h = Self.badgeLogoHeight
         let w = min(h * icon.size.width / max(icon.size.height, 1), Self.badgeLeading - 2)
         let rect = NSRect(
@@ -1105,18 +1094,7 @@ final class StatusBarView: NSView, StatusItemRenderable {
         return sparkleFallbackImage
     }()
 
-    /// Kimi 徽章白色版（深色菜单栏用）：黑色剪影反色，alpha 不变
-    private static let kimiBadgeLogoInverted: NSImage? = {
-        guard let black = kimiBadgeLogo,
-              let tiff = black.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let cg = rep.cgImage else { return nil }
-        let filter = CIFilter.colorInvert()
-        filter.inputImage = CIImage(cgImage: cg)
-        guard let out = filter.outputImage,
-              let outCG = CIContext().createCGImage(out, from: out.extent) else { return nil }
-        return NSImage(cgImage: outCG, size: black.size)
-    }()
+    /// Kimi 徽章白色版已废弃（模板 tint 方案，同 appLogoInverted）
 
     /// 通用单色化：降采样 → 区域生长去底 → 亮度兜底清残留 → 置纯黑 → 包围盒裁剪。
     /// 与 appLogo 同一套已验证的管线，抽为静态方法供两个 Logo 复用
@@ -1195,15 +1173,11 @@ final class StatusBarView: NSView, StatusItemRenderable {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// 内容是否按深色绘制（白字）：由菜单栏按钮传入的外观决定
-    private var isDarkContent: Bool {
-        let app = appearance ?? NSApp.effectiveAppearance
-        return app.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-    }
-
     private var currentPalette: Palette {
-        // 不用模板图后，明暗外观下需用白/黑两套墨水色直接绘制
-        let ink: NSColor = isDarkContent ? .white : .black
+        // 模板图方案：统一纯黑墨水+alpha 变体，最终 isTemplate=true
+        // 由系统按所在屏幕菜单栏外观 tint（见 renderStatusBarBitmap 注释），
+        // 不再手动区分明暗（手动方案在每屏独立外观下无法取到正确值）
+        let ink = NSColor.black
         return Palette(
             barBackground: ink.withAlphaComponent(0.18),
             pausedBackground: ink.withAlphaComponent(0.12),
@@ -1269,14 +1243,10 @@ final class DeepSeekBalanceStatusView: NSView, StatusItemRenderable {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let text = balanceText else { return }
-        // 与进度条视图一致：按明暗外观直接画黑/白，不用模板图
-        var isDark = false
-        if let best = (appearance ?? NSApp.effectiveAppearance).bestMatch(from: [.aqua, .darkAqua]) {
-            isDark = best == .darkAqua
-        }
+        // 模板图方案：统一纯黑绘制，系统按所在屏幕菜单栏外观 tint
         let attrs: [NSAttributedString.Key: Any] = [
             .font: Self.balanceFont,
-            .foregroundColor: isDark ? NSColor.white : NSColor.black
+            .foregroundColor: NSColor.black
         ]
         let size = text.size(withAttributes: attrs)
         let y = (bounds.height - size.height) / 2
