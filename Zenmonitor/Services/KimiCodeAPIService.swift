@@ -62,8 +62,17 @@ final class KimiCodeAPIService: MonitoredSource {
     /// MonitoredSource 协议：状态变化回调（AppDelegate 用于刷新状态栏项）
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
 
+    /// runloop 合并标记：fetch 过程中多个 @Observable 属性先后变化，
+    /// 合并为一次状态栏同步，避免全量重渲染风暴
+    @ObservationIgnored private var pendingStateNotify = false
+
     private func notifyStateChange() {
-        onStateChange?()
+        guard !pendingStateNotify else { return }
+        pendingStateNotify = true
+        Task { @MainActor [weak self] in
+            self?.pendingStateNotify = false
+            self?.onStateChange?()
+        }
     }
 
     private init() {

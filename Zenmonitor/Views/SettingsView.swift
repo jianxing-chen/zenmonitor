@@ -30,9 +30,10 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
+            // 不透明窗口背景（替代全窗口磨砂）：Material 实时模糊在保存徽章出现/消失的
+            // 动画期间会逐帧重算，是内存尖峰的主要来源（实测 93 万次瞬态分配）
             Rectangle()
-                .fill(Color.clear)
-                .background(.ultraThinMaterial)
+                .fill(Color(nsColor: .windowBackgroundColor))
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -86,6 +87,8 @@ struct SettingsView: View {
             DeepSeekSourceCard()
         case "kimi":
             KimiSourceCard()
+        case "ark":
+            VolcanoArkSourceCard()
         default:
             // 未来新源的通用卡片
             GenericSourceCard(source: source)
@@ -241,7 +244,7 @@ struct ZenmuxSourceCard: View {
             )
         }
         .settingsCard()
-        .animation(.easeOut(duration: 0.2), value: showKeySaved)
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
     }
 
     /// 输入框去空白后是否为空（空 = 删除 Key 操作）
@@ -350,7 +353,7 @@ struct DeepSeekSourceCard: View {
             )
         }
         .settingsCard()
-        .animation(.easeOut(duration: 0.2), value: showKeySaved)
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
     }
 
     /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
@@ -445,7 +448,7 @@ struct KimiSourceCard: View {
             )
         }
         .settingsCard()
-        .animation(.easeOut(duration: 0.2), value: showKeySaved)
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
     }
 
     /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
@@ -464,6 +467,128 @@ struct KimiSourceCard: View {
         let configured = settings.kimiAPIKey?.isEmpty == false
         return StatusBadge(title: configured ? "已配置" : "未配置",
                            icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - 火山方舟源配置卡片
+
+struct VolcanoArkSourceCard: View {
+    @State private var accessKeyInput: String
+    @State private var secretKeyInput: String
+    @State private var showKeySaved = false
+
+    private let settings = SettingsManager.shared
+
+    init() {
+        _accessKeyInput = State(initialValue: SettingsManager.shared.arkAccessKey ?? "")
+        _secretKeyInput = State(initialValue: SettingsManager.shared.arkSecretKey ?? "")
+    }
+
+    /// 两个输入框去空白后是否均为空（空 = 删除凭据操作）
+    private var keyInputIsEmpty: Bool {
+        accessKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && secretKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 保存条件：两个输入框均非空
+    private var canSave: Bool {
+        !accessKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !secretKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 凭据是否已配置（任一缺失即未配置）
+    private var isConfigured: Bool {
+        settings.arkAccessKey?.isEmpty == false && settings.arkSecretKey?.isEmpty == false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题
+            HStack(spacing: 10) {
+                Image("VolcanoArkLogo")
+                    .resizable()
+                    .frame(width: 24, height: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("火山方舟 Agent Plan")
+                        .font(.headline)
+                        .foregroundStyle(SettingsPalette.primaryText)
+                    Text("显示 AFP 配额（5H/1D/7D/1M），菜单打开时拉取。")
+                        .font(.subheadline)
+                        .foregroundStyle(SettingsPalette.secondaryText)
+                }
+            }
+
+            // AccessKey 输入
+            SecureField("请输入 AccessKey（AK）", text: $accessKeyInput)
+                .keyFieldStyle()
+
+            // SecretKey 输入 + 保存/删除按钮
+            HStack(spacing: 10) {
+                SecureField("请输入 SecretKey（SK）", text: $secretKeyInput)
+                    .keyFieldStyle()
+
+                Button {
+                    if keyInputIsEmpty {
+                        // 删除凭据：置空配置并立即清空配额数据与缓存
+                        settings.arkAccessKey = nil
+                        settings.arkSecretKey = nil
+                        ArkAPIService.shared.invalidateForMissingCredentials()
+                        flashSavedBadge()
+                    } else if canSave {
+                        settings.arkAccessKey = accessKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        settings.arkSecretKey = secretKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        UserDefaults.standard.removeObject(forKey: "ark_cached_usages")
+                        UserDefaults.standard.removeObject(forKey: "ark_cached_updated")
+                        // 首次配置凭据时自动开启状态栏显示（与其他源需手动开启的预期不同，
+                        // AK/SK 配置门槛更高，配置即意味着期望看到监控项）
+                        if !settings.statusBarEnabled(for: "ark") {
+                            settings.setStatusBarEnabled(true, for: "ark")
+                            NotificationCenter.default.post(name: .statusBarSettingsChanged, object: nil)
+                        }
+                        // 保存后立即拉取一次，便于下次打开菜单即有数据
+                        Task { await ArkAPIService.shared.refresh() }
+                        flashSavedBadge()
+                    }
+                    // 只填了一个输入框时不保存（按钮处于禁用态）
+                } label: {
+                    // 输入框均为空时按钮变为「删除」，允许清除已保存的凭据
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                .buttonStyle(SettingsProminentButtonStyle())
+                .disabled(!keyInputIsEmpty && !canSave)
+            }
+
+            // 底部：菜单栏开关 + 密钥管理链接 + 状态徽章
+            SourceCardFooter(
+                sourceID: "ark",
+                consoleURL: URL(string: "https://console.volcengine.com/iam/keymanage")!,
+                consoleHint: "前往火山引擎 IAM 创建 AccessKey",
+                badge: feedbackOrStatusBadge
+            )
+        }
+        .settingsCard()
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
+    }
+
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        return StatusBadge(title: isConfigured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: isConfigured ? .green : .secondary)
     }
 }
 

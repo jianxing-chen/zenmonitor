@@ -41,6 +41,8 @@ final class SettingsManager {
         static let cachedLastUpdated = "cached_last_updated"
         static let deepseekAPIKey = "deepseek_api_key"
         static let kimiAPIKey = "kimi_api_key"
+        static let arkAccessKey = "ark_access_key"
+        static let arkSecretKey = "ark_secret_key"
         static let statusBarPrefix = "statusbar_enabled_"
         static let menuOrder = "menu_source_order"
         static let apiDomain = "api_domain"
@@ -98,6 +100,21 @@ final class SettingsManager {
     var kimiAPIKey: String? {
         get { defaults.string(forKey: Keys.kimiAPIKey) }
         set { defaults.set(newValue, forKey: Keys.kimiAPIKey) }
+    }
+
+    // MARK: - 火山方舟 AK/SK
+
+    /// 火山引擎账号级 AccessKey（IAM 控制台创建），用于控制面 OpenAPI 的 V4 签名。
+    /// 注意：非 ark- 开头的推理 API Key，两者不通用。
+    var arkAccessKey: String? {
+        get { defaults.string(forKey: Keys.arkAccessKey) }
+        set { defaults.set(newValue, forKey: Keys.arkAccessKey) }
+    }
+
+    /// 火山引擎账号级 SecretKey，与 arkAccessKey 配对使用
+    var arkSecretKey: String? {
+        get { defaults.string(forKey: Keys.arkSecretKey) }
+        set { defaults.set(newValue, forKey: Keys.arkSecretKey) }
     }
 
     // MARK: - 状态栏显示开关

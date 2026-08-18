@@ -56,6 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 zenmux.handleAppLaunch()
             }
         }
+        // 预热 Logo 单色化静态缓存：static let 首次初始化会同步执行逐像素处理，
+        // 启动时提前完成（字节缓冲实现开销极低），避免首次状态栏渲染时的尖峰
+        Task { @MainActor in
+            _ = StatusBarView.kimiBadgeLogo
+            _ = StatusBarView.arkBadgeLogo
+            _ = PanelLogo.zenmux
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -260,15 +267,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             view.source = source as? DeepSeekAPIService
             return view
         default:
-            // Zenmux / Kimi 及未来配额型源：双进度条视图；
+            // Zenmux / Kimi / 火山方舟及未来配额型源：双进度条视图；
             // 仅 Zenmux 无数据时回退 App Logo（主源始终可见的产品入口）；
-            // Kimi 加源标识徽章，与 Zenmux 同款式进度条区分
+            // Kimi / 火山方舟加品牌徽章且不画百分比（与 Zenmux 带百分比的样式区分）
             let view = StatusBarView(frame: NSRect(x: 0, y: 0, width: 49, height: 22))
             view.registry = registry
             view.targetSource = source
             view.showsLogoFallback = source.sourceID == "zenmux"
-            view.showsSourceBadge = source.sourceID == "kimi"
-            view.showsPercentText = source.sourceID != "kimi"
+            if source.sourceID == "kimi" {
+                view.badgeImage = StatusBarView.kimiBadgeLogo
+                view.showsSourceBadge = true
+                view.showsPercentText = false
+            } else if source.sourceID == "ark" {
+                view.badgeImage = StatusBarView.arkBadgeLogo
+                view.showsSourceBadge = true
+                view.showsPercentText = false
+            }
             return view
         }
     }
@@ -585,13 +599,7 @@ func stripLightBackgroundKeepColor(_ image: NSImage, lumGate: CGFloat) -> NSImag
 
     var lum = [CGFloat](repeating: 0, count: w * h)
     var alpha = [CGFloat](repeating: 0, count: w * h)
-    for y in 0..<h {
-        for x in 0..<w {
-            guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-            lum[y * w + x] = 0.299 * c.redComponent + 0.587 * c.greenComponent + 0.114 * c.blueComponent
-            alpha[y * w + x] = c.alphaComponent
-        }
-    }
+    readPixelArrays(rep, w: w, h: h, lum: &lum, alpha: &alpha)
 
     // 种子：四边上 alpha≈0 的像素
     var isBG = [Bool](repeating: false, count: w * h)
@@ -624,11 +632,7 @@ func stripLightBackgroundKeepColor(_ image: NSImage, lumGate: CGFloat) -> NSImag
     for i in 0..<(w * h) where !isBG[i] && lum[i] > 0.88 && lum[i] <= 0.97 {
         removed[i] = true
     }
-    for y in 0..<h {
-        for x in 0..<w where removed[y * w + x] {
-            rep.setColor(NSColor(deviceRed: 0, green: 0, blue: 0, alpha: 0), atX: x, y: y)
-        }
-    }
+    rewritePixels(rep, w: w, h: h) { i in removed[i] ? 0 : nil }
 
     // 裁剪到图案包围盒，去除图标设计的四周留白
     var minX = w, minY = h, maxX = -1, maxY = -1
@@ -657,6 +661,50 @@ func stripLightBackgroundKeepColor(_ image: NSImage, lumGate: CGFloat) -> NSImag
         return out
     }
     return NSImage(cgImage: cropped, size: NSSize(width: cropRect.width, height: cropRect.height))
+}
+
+// MARK: - 像素级处理工具（性能优化：位图字节缓冲直接读写，
+// 避免 colorAt/setColor 逐像素分配 NSColor 对象造成内存尖峰）
+
+/// 读取位图像素到亮度/透明度数组（ premultiplied RGBA 字节布局）
+@MainActor
+private func readPixelArrays(_ rep: NSBitmapImageRep, w: Int, h: Int,
+                             lum: inout [CGFloat], alpha: inout [CGFloat]) {
+    guard let base = rep.bitmapData else { return }
+    let bpp = rep.bitsPerPixel / 8
+    var idx = 0
+    for y in 0..<h {
+        var p = base + y * rep.bytesPerRow
+        for _ in 0..<w {
+            let a = CGFloat(p[3]) / 255
+            alpha[idx] = a
+            if a > 0 {
+                lum[idx] = (0.299 * CGFloat(p[0]) + 0.587 * CGFloat(p[1]) + 0.114 * CGFloat(p[2])) / 255
+            }
+            p += bpp
+            idx += 1
+        }
+    }
+}
+
+/// 按 keepAlpha 数组重写位图（颜色置黑，仅保留 alpha；未命中谓词的像素不动）
+@MainActor
+private func rewritePixels(_ rep: NSBitmapImageRep, w: Int, h: Int,
+                           keepAlpha: (Int) -> CGFloat?) {
+    guard let base = rep.bitmapData else { return }
+    let bpp = rep.bitsPerPixel / 8
+    var idx = 0
+    for y in 0..<h {
+        var p = base + y * rep.bytesPerRow
+        for _ in 0..<w {
+            if let a = keepAlpha(idx) {
+                let byte = UInt8(min(max(a, 0), 1) * 255)
+                p[0] = 0; p[1] = 0; p[2] = 0; p[3] = byte
+            }
+            p += bpp
+            idx += 1
+        }
+    }
 }
 
 // MARK: - 状态栏渲染视图协议
@@ -983,13 +1031,7 @@ final class StatusBarView: NSView, StatusItemRenderable {
 
         var lum = [CGFloat](repeating: 0, count: w * h)
         var alpha = [CGFloat](repeating: 0, count: w * h)
-        for y in 0..<h {
-            for x in 0..<w {
-                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-                lum[y * w + x] = 0.299 * c.redComponent + 0.587 * c.greenComponent + 0.114 * c.blueComponent
-                alpha[y * w + x] = c.alphaComponent
-            }
-        }
+        readPixelArrays(rep, w: w, h: h, lum: &lum, alpha: &alpha)
 
         // 种子：四边上 alpha≈0 的像素（圆角外的透明区）
         var isBG = [Bool](repeating: false, count: w * h)
@@ -1025,12 +1067,13 @@ final class StatusBarView: NSView, StatusItemRenderable {
         //    否则菜单栏里出现灰白块；门槛 0.97 同时保留白色眼睛
         //    等高亮细节（亮度≈1.0）；
         // 3) 保留像素置纯黑（菜单栏单色风格，深色模式经反色得纯白）
-        for y in 0..<h {
-            for x in 0..<w {
-                let i = y * w + x
-                let keepAlpha = isBG[i] ? 0 : (lum[i] > 0.97 ? alpha[i] : (lum[i] > 0.88 ? 0 : alpha[i]))
-                rep.setColor(NSColor(deviceRed: 0, green: 0, blue: 0, alpha: keepAlpha), atX: x, y: y)
-            }
+        // 字节缓冲重写（避免逐像素 NSColor 分配）：背景/封闭底板置透明，
+        // >0.97 高亮细节保留原 alpha，其余保留像素置纯黑（模板 tint 深色模式自动变白）
+        rewritePixels(rep, w: w, h: h) { i in
+            if isBG[i] { return 0 }
+            if lum[i] > 0.97 { return alpha[i] }
+            if lum[i] > 0.88 { return 0 }
+            return alpha[i]
         }
 
         // 裁剪到图案包围盒：去掉图标设计的四周留白，
@@ -1065,11 +1108,15 @@ final class StatusBarView: NSView, StatusItemRenderable {
 
     /// Logo 白色版已废弃：模板 tint 方案下无需反色缓存（历史 CoreImage 反色实现已随方案回归移除）
 
-    /// 源标识徽章：Kimi 品牌 Logo 单色剪影（呼应设置面板/下拉面板的品牌形象），
+    /// 源标识徽章图（单色剪影，交模板 tint）；nil 时回退 Kimi Logo。
+    /// 由 AppDelegate 按源注入（Kimi / 火山方舟等）
+    var badgeImage: NSImage?
+
+    /// 源标识徽章：品牌 Logo 单色剪影（呼应设置面板/下拉面板的品牌形象），
     /// 黑色剪影交给模板 tint，随所在屏幕菜单栏外观自动黑/白
     private func drawSourceBadge(palette: Palette) {
         // 黑色剪影 + 模板 tint，同 drawLogo
-        guard let icon = Self.kimiBadgeLogo else { return }
+        guard let icon = badgeImage ?? Self.kimiBadgeLogo else { return }
         let h = Self.badgeLogoHeight
         let w = min(h * icon.size.width / max(icon.size.height, 1), Self.badgeLeading - 2)
         let rect = NSRect(
@@ -1086,8 +1133,18 @@ final class StatusBarView: NSView, StatusItemRenderable {
 
     /// Kimi 徽章 Logo 缓存：KimiLogo 资源经通用单色化管线处理（去底 + 置黑），
     /// 处理失败时回退到四角星形矢量绘制，保证标识始终存在
-    private static let kimiBadgeLogo: NSImage? = {
+    static let kimiBadgeLogo: NSImage? = {
         if let icon = NSImage(named: "KimiLogo"),
+           let mono = makeMonochromeSilhouette(icon) {
+            return mono
+        }
+        return sparkleFallbackImage
+    }()
+
+    /// 火山方舟徽章 Logo 缓存：VolcanoArkLogo 单色化（去底 + 置黑），
+    /// 处理失败时回退四角星形矢量图
+    static let arkBadgeLogo: NSImage? = {
+        if let icon = NSImage(named: "VolcanoArkLogo"),
            let mono = makeMonochromeSilhouette(icon) {
             return mono
         }
