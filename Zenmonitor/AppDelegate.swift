@@ -1468,7 +1468,8 @@ struct SourceQuotaSection: View {
                         resetsAt: window.resetsAt,
                         windowDuration: window.windowDuration,
                         projectedPct: window.projectedPct,
-                        showDetails: showDetails
+                        showDetails: showDetails,
+                        percentText: window.percentText
                     )
                 }
             }
@@ -1539,6 +1540,8 @@ struct QuotaRow: View {
     var projectedPct: Double? = nil
     /// 次要明细（flows / USD）是否可见；折叠时仅保留重置时间，行高不变
     var showDetails: Bool = true
+    /// 百分比自定义文本（整数粒度源提供整数格式）；nil 时用默认两位小数
+    var percentText: String? = nil
 
     var body: some View {
         VStack(spacing: 6) {
@@ -1560,7 +1563,7 @@ struct QuotaRow: View {
                 .foregroundStyle(.secondary)
                 Spacer()
                 // 有消耗但不足 1% 时显示 <1%，避免取整为 0% 的误导（Kimi 端点为 1% 粒度）
-                Text(percentDisplay)
+                Text(percentText ?? percentDisplay)
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(progressColor)

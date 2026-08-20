@@ -213,7 +213,10 @@ final class KimiCodeAPIService: MonitoredSource {
             usedUSDText: nil,
             resetsAt: window.resetsAt,
             windowDuration: window.windowDuration ?? (isSession ? 5 * 3600 : 7 * 24 * 3600),
-            projectedPct: nil
+            projectedPct: nil,
+            // 整数粒度源（limit=100 整数单位）：百分比恒为整数，
+            // 直接显示整数格式（"25%"），避免 "25.00%" 的伪精度
+            percentText: String(format: "%.0f%%", window.usedPercent)
         )
     }
 

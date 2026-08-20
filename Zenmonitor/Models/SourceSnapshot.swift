@@ -71,6 +71,9 @@ struct QuotaWindowData {
     /// 预测占比（可选）：若上游窗口用满，本窗口将达到的占比
     /// 仅 7d 这类有上游 5h 窗口的场景使用
     let projectedPct: Double?
+    /// 百分比自定义文本（可选）：整数粒度源（如 Kimi，limit=100 整数单位）
+    /// 提供整数格式（"25%"）避免 "25.00%" 的伪精度；nil 时 UI 用默认两位小数格式
+    var percentText: String? = nil
 }
 
 // MARK: - 指标卡片
