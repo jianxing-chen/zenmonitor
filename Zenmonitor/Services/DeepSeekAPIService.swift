@@ -187,8 +187,9 @@ final class DeepSeekAPIService: MonitoredSource {
         return .balance(makeBalanceSnapshot(from: data))
     }
 
-    /// MonitoredSource 协议要求的统一刷新入口
-    func refresh() async {
+    /// MonitoredSource 协议要求的统一刷新入口（手动/自动语义一致：无 Key 静默跳过）
+    /// 注：今日用量的整点采样（startHourlySampling）为独立统计链路，与此处无关
+    func refresh(force: Bool) async {
         await fetchBalance()
     }
 

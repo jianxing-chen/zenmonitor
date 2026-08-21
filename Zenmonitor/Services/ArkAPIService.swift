@@ -277,8 +277,8 @@ final class ArkAPIService: MonitoredSource {
         return .quota(makeQuotaSnapshot())
     }
 
-    /// MonitoredSource 协议要求的统一刷新入口
-    func refresh() async {
+    /// MonitoredSource 协议要求的统一刷新入口（手动/自动语义一致：无 AK/SK 静默跳过）
+    func refresh(force: Bool) async {
         await fetchUsages()
     }
 

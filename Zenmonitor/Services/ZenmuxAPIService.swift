@@ -62,9 +62,6 @@ final class ZenmuxAPIService: MonitoredSource {
         didSet { notifyStateChange() }
     }
 
-    @ObservationIgnored private var refreshTask: Task<Void, Never>?
-    @ObservationIgnored private var activeRefreshInterval: TimeInterval?
-    @ObservationIgnored private var isManuallyPaused = false
     @ObservationIgnored private var pendingStateNotify = false
     @ObservationIgnored private var isCleanedUp = false
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
@@ -75,43 +72,47 @@ final class ZenmuxAPIService: MonitoredSource {
 
     // MARK: - 公开方法
 
-    /// 应用启动：直接开始按间隔刷新
+    /// 应用启动：立即拉取一次；周期性自动刷新由 SourceRegistry 全局定时器统一驱动
     func handleAppLaunch() {
+        isPaused = false
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
             clearForMissingAPIKey()
-            stopRefreshLoop(markPaused: false)
             return
         }
-        let interval = SettingsManager.shared.refreshInterval
-        startRefreshLoop(interval: interval, immediateFetch: true)
+        Task { [weak self] in
+            await self?.fetchSubscription(force: true)
+        }
     }
 
-    /// 设置变更后重新应用刷新策略
+    /// 设置变更后重新应用刷新策略（域名/Key 变更等）：
+    /// 自动刷新间隔已移交 SourceRegistry 统一管理，此处仅处理立即拉取与无 Key 清理
     func settingsDidChange(forceFetch: Bool = true) {
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
             clearForMissingAPIKey()
-            stopRefreshLoop(markPaused: false)
+            isPaused = false
             return
         }
-        guard !isManuallyPaused else {
-            stopRefreshLoop(markPaused: true)
-            return
+        guard forceFetch else { return }
+        // 立即拉取绕过暂停（与原行为一致），不改变暂停状态
+        Task { [weak self] in
+            await self?.fetchSubscription(force: true, bypassPause: true)
         }
-        let interval = SettingsManager.shared.refreshInterval
-        startRefreshLoop(interval: interval, immediateFetch: forceFetch)
     }
 
-    /// 手动暂停自动刷新
+    /// 手动暂停自动刷新：全局定时器的自动触发（force=false）将静默跳过本源，
+    /// 手动触发（面板打开/刷新按钮）仍可拉取
     func pauseAutoRefresh() {
-        isManuallyPaused = true
-        stopRefreshLoop(markPaused: true)
+        isPaused = true
     }
 
     /// 手动恢复自动刷新
     func resumeAutoRefresh(forceFetch: Bool = true) {
-        isManuallyPaused = false
-        let interval = SettingsManager.shared.refreshInterval
-        startRefreshLoop(interval: interval, immediateFetch: forceFetch)
+        isPaused = false
+        if forceFetch {
+            Task { [weak self] in
+                await self?.fetchSubscription(force: true)
+            }
+        }
     }
 
     /// 手动立即刷新一次，但不改变当前暂停状态（内部 force 绕过暂停检查，不翻转 isPaused）
@@ -127,13 +128,12 @@ final class ZenmuxAPIService: MonitoredSource {
             return
         }
 
-        // bypassPause: 绕过暂停检查（refreshNow 使用），不改变 isPaused 状态
+        // bypassPause: 绕过暂停检查（手动触发使用），不改变 isPaused 状态；
+        // 自动定时触发（force=false 且未 bypassPause）在手动暂停时静默跳过。
+        // isPaused 状态仅由 pauseAutoRefresh/resumeAutoRefresh 翻转
         if !force, !bypassPause, isPaused { return }
         if isRefreshing { return }
 
-        if !bypassPause {
-            isPaused = false
-        }
         isRefreshing = true
         lastError = nil
 
@@ -180,37 +180,6 @@ final class ZenmuxAPIService: MonitoredSource {
         }
     }
 
-    private func startRefreshLoop(interval: TimeInterval, immediateFetch: Bool) {
-        let shouldRestartTask = refreshTask == nil || activeRefreshInterval != interval
-
-        if shouldRestartTask {
-            stopRefreshLoop(markPaused: false)
-            activeRefreshInterval = interval
-            refreshTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-                    if Task.isCancelled { break }
-                    await self?.fetchSubscription()
-                }
-            }
-        }
-
-        isPaused = false
-
-        if immediateFetch {
-            Task { [weak self] in
-                await self?.fetchSubscription(force: true)
-            }
-        }
-    }
-
-    private func stopRefreshLoop(markPaused: Bool) {
-        refreshTask?.cancel()
-        refreshTask = nil
-        activeRefreshInterval = nil
-        isPaused = markPaused
-    }
-
     private func clearForMissingAPIKey() {
         lastError = ZenmuxAPIErrorType.noAPIKey.localizedDescription
         clearCachedSnapshotState()
@@ -219,7 +188,6 @@ final class ZenmuxAPIService: MonitoredSource {
     func cleanup() {
         guard !isCleanedUp else { return }
         isCleanedUp = true
-        stopRefreshLoop(markPaused: false)
         isRefreshing = false
     }
 
@@ -268,8 +236,14 @@ final class ZenmuxAPIService: MonitoredSource {
     }
 
     /// MonitoredSource 协议要求的统一刷新入口
-    func refresh() async {
-        await refreshNow()
+    /// - Parameter force: true = 手动触发（面板打开/刷新按钮/保存 Key），绕过暂停；
+    ///   false = 全局定时器自动触发，手动暂停时静默跳过
+    func refresh(force: Bool) async {
+        if force {
+            await refreshNow()
+        } else {
+            await fetchSubscription()
+        }
     }
 
     /// 把 Zenmux 原始订阅数据转换为通用配额快照

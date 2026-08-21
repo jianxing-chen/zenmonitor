@@ -20,6 +20,13 @@ final class SourceRegistry {
     /// 所有已注册的监控源（当前内置，未来可动态扩展）
     private(set) var sources: [any MonitoredSource] = []
 
+    /// 全局自动刷新定时器：四源统一的自动刷新频率唯一来源，
+    /// 间隔跟随 SettingsManager.refreshInterval（设置面板「自动刷新间隔」）
+    @ObservationIgnored private var autoRefreshTask: Task<Void, Never>?
+
+    /// 全局自动刷新每轮 tick 完成后的回调（AppDelegate 用于同步打开中的下拉面板）
+    @ObservationIgnored var onAutoRefreshTick: (@MainActor () -> Void)?
+
     private init() {
         // 内置源注册：Zenmux 为主（配额型），DeepSeek（余额型）、Kimi（配额型）、
         // 火山方舟 Agent Plan（配额型）为辅
@@ -44,14 +51,42 @@ final class SourceRegistry {
     }
 
     /// 刷新所有已启用源（并行，互不阻断）
-    func refreshAll() async {
+    /// - Parameter force: true = 手动触发（面板打开/刷新按钮），各源绕过暂停策略；
+    ///   false = 全局定时器自动触发，源可尊重自身手动暂停状态（如 Zenmux）
+    func refreshAll(force: Bool = true) async {
         await withTaskGroup(of: Void.self) { group in
             for source in sources {
                 group.addTask { @MainActor in
-                    await source.refresh()
+                    await source.refresh(force: force)
                 }
             }
         }
+    }
+
+    // MARK: - 全局自动刷新
+
+    /// 启动（或按新间隔重启）全局自动刷新循环。
+    /// 应用启动时调用一次；设置中修改刷新间隔后再次调用即以新间隔生效。
+    /// force=false 触发，Zenmux 手动暂停时静默跳过，其余源未配置凭据时内部静默跳过。
+    func startAutoRefresh() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                // 每轮读取当前间隔：即使未重启循环，间隔变更也会在下一轮生效
+                let interval = SettingsManager.shared.refreshInterval
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled else { break }
+                await self?.refreshAll(force: false)
+                guard !Task.isCancelled else { break }
+                self?.onAutoRefreshTick?()
+            }
+        }
+    }
+
+    /// 停止全局自动刷新循环（应用退出清理用）
+    func stopAutoRefresh() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = nil
     }
 
     /// 是否有任一源正在刷新（用于菜单「刷新」按钮状态）

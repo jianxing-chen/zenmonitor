@@ -114,10 +114,8 @@ struct SettingsView: View {
                 .frame(width: 160)
                 .onChange(of: refreshInterval) { _, newValue in
                     settings.refreshInterval = newValue
-                    // 通知所有源设置变更（当前主要是 Zenmux 的刷新间隔）
-                    if let zenmux = registry.source(withID: "zenmux") as? ZenmuxAPIService {
-                        zenmux.settingsDidChange(forceFetch: true)
-                    }
+                    // 重启全局自动刷新定时器，新间隔立即生效（四源统一跟随）
+                    registry.startAutoRefresh()
                 }
             }
 

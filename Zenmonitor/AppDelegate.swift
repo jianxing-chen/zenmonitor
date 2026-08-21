@@ -44,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var isShuttingDown = false
     private let registry = SourceRegistry.shared
     private var sizeObservers: [MenuHostingSizeObserver] = []
+    /// 下拉面板是否处于打开状态（menuWillOpen/menuDidClose 维护），
+    /// 供「打开期间数据到达后重建面板内容」判断使用
+    private var isDropdownMenuOpen = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -55,6 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             if let zenmux = source as? ZenmuxAPIService {
                 zenmux.handleAppLaunch()
             }
+        }
+        // 启动全局自动刷新定时器：四源统一跟随设置面板「自动刷新间隔」
+        registry.startAutoRefresh()
+        // 自动刷新 tick 完成后，面板若仍打开则同步重建内容（消除打开期间数据不更新的盲区）
+        registry.onAutoRefreshTick = { [weak self] in
+            self?.rebuildMenuIfOpen()
         }
         // 预热 Logo 单色化静态缓存：static let 首次初始化会同步执行逐像素处理，
         // 启动时提前完成（字节缓冲实现开销极低），避免首次状态栏渲染时的尖峰
@@ -373,6 +382,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(actionItem)
     }
 
+    /// 面板仍处于打开状态时，用最新数据重建菜单内容。
+    /// 调用时机：手动刷新完成、打开触发的刷新完成、全局自动刷新 tick 完成。
+    /// 重建前先停掉旧 hosting 视图的尺寸观察者，避免累积泄漏
+    private func rebuildMenuIfOpen() {
+        guard isDropdownMenuOpen, !isShuttingDown else { return }
+        sizeObservers.forEach { $0.stop() }
+        sizeObservers.removeAll()
+        dropdownMenu.removeAllItems()
+        buildMenuItems(into: dropdownMenu)
+    }
+
     private func openSettings() {
         guard !isShuttingDown else { return }
         if settingsWindow == nil {
@@ -435,6 +455,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             guard let self, !self.isShuttingDown else { return }
             await self.registry.refreshAll()
             self.syncStatusItems()
+            // 面板打开期间点刷新：数据到达后重建菜单内容，无需关闭重开
+            self.rebuildMenuIfOpen()
         }
     }
 
@@ -442,6 +464,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func menuWillOpen(_ menu: NSMenu) {
         guard !isShuttingDown else { return }
+        isDropdownMenuOpen = true
         if !menu.items.isEmpty { menu.removeAllItems() }
         buildMenuItems(into: menu)
         // 菜单打开时刷新所有源（DeepSeek 走「菜单打开时拉取」策略）
@@ -449,11 +472,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             guard let self, !self.isShuttingDown else { return }
             await self.registry.refreshAll()
             self.syncStatusItems()
+            // 打开触发的刷新返回后同步面板内容（新数据立即可见）
+            self.rebuildMenuIfOpen()
         }
     }
 
     func menuDidClose(_ menu: NSMenu) {
         guard !isShuttingDown else { return }
+        isDropdownMenuOpen = false
         sizeObservers.forEach { $0.stop() }
         sizeObservers.removeAll()
         menu.removeAllItems()
@@ -487,6 +513,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func performShutdownCleanup() {
         isShuttingDown = true
+        // 停止全局自动刷新定时器并清除回调
+        registry.stopAutoRefresh()
+        registry.onAutoRefreshTick = nil
         // 清理每个源的回调
         registry.sources.forEach { source in
             source.onStateChange = nil
