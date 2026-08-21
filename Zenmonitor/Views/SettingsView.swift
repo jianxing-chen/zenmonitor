@@ -87,6 +87,8 @@ struct SettingsView: View {
             DeepSeekSourceCard()
         case "kimi":
             KimiSourceCard()
+        case "zhipu":
+            ZhipuSourceCard()
         case "ark":
             VolcanoArkSourceCard()
         default:
@@ -463,6 +465,107 @@ struct KimiSourceCard: View {
                                icon: "checkmark.circle.fill", tint: .green)
         }
         let configured = settings.kimiAPIKey?.isEmpty == false
+        return StatusBadge(title: configured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - 智谱 GLM 源配置卡片
+
+struct ZhipuSourceCard: View {
+    @State private var apiKeyInput: String
+    @State private var showKeySaved = false
+
+    private let settings = SettingsManager.shared
+
+    init() {
+        _apiKeyInput = State(initialValue: SettingsManager.shared.zhipuAPIKey ?? "")
+    }
+
+    /// 输入框去空白后是否为空（空 = 删除 Key 操作）
+    private var keyInputIsEmpty: Bool {
+        apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题
+            HStack(spacing: 10) {
+                Image("ZhipuLogo")
+                    .resizable()
+                    .frame(width: 20, height: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("智谱 GLM Coding Plan")
+                        .font(.headline)
+                        .foregroundStyle(SettingsPalette.primaryText)
+                    Text("用于下拉面板显示 5 小时/周配额，随统一自动刷新间隔拉取。")
+                        .font(.subheadline)
+                        .foregroundStyle(SettingsPalette.secondaryText)
+                }
+            }
+
+            // API Key 输入
+            HStack(spacing: 10) {
+                SecureField("请输入智谱 Coding Plan API Key", text: $apiKeyInput)
+                    .keyFieldStyle()
+
+                Button {
+                    let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        // 删除 Key：置空配置并立即清空配额数据与缓存
+                        settings.zhipuAPIKey = nil
+                        ZhipuAPIService.shared.invalidateForMissingKey()
+                    } else {
+                        settings.zhipuAPIKey = trimmed
+                        UserDefaults.standard.removeObject(forKey: "zhipu_cached_usages")
+                        UserDefaults.standard.removeObject(forKey: "zhipu_cached_updated")
+                        // 首次配置 Key 时自动开启状态栏显示（与火山方舟一致：
+                        // 配置即意味着期望看到监控项）
+                        if !settings.statusBarEnabled(for: "zhipu") {
+                            settings.setStatusBarEnabled(true, for: "zhipu")
+                            NotificationCenter.default.post(name: .statusBarSettingsChanged, object: nil)
+                        }
+                        // 保存后立即拉取一次，便于下次打开菜单即有数据
+                        Task { await ZhipuAPIService.shared.refresh() }
+                    }
+                    flashSavedBadge()
+                } label: {
+                    // 输入框为空时按钮变为「删除」，允许清除已保存的 Key
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                .buttonStyle(SettingsProminentButtonStyle())
+            }
+
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
+            SourceCardFooter(
+                sourceID: "zhipu",
+                consoleURL: URL(string: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys")!,
+                consoleHint: "前往智谱开放平台创建 Key",
+                badge: feedbackOrStatusBadge
+            )
+        }
+        .settingsCard()
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
+    }
+
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        let configured = settings.zhipuAPIKey?.isEmpty == false
         return StatusBadge(title: configured ? "已配置" : "未配置",
                            icon: "bolt.fill", tint: configured ? .green : .secondary)
     }

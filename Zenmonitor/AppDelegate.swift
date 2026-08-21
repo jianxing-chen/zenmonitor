@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         // 启动时提前完成（字节缓冲实现开销极低），避免首次状态栏渲染时的尖峰
         Task { @MainActor in
             _ = StatusBarView.kimiBadgeLogo
+            _ = StatusBarView.zhipuBadgeLogo
             _ = StatusBarView.arkBadgeLogo
             _ = PanelLogo.zenmux
         }
@@ -285,6 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             view.showsLogoFallback = source.sourceID == "zenmux"
             if source.sourceID == "kimi" {
                 view.badgeImage = StatusBarView.kimiBadgeLogo
+                view.showsSourceBadge = true
+                view.showsPercentText = false
+            } else if source.sourceID == "zhipu" {
+                view.badgeImage = StatusBarView.zhipuBadgeLogo
                 view.showsSourceBadge = true
                 view.showsPercentText = false
             } else if source.sourceID == "ark" {
@@ -1174,6 +1179,16 @@ final class StatusBarView: NSView, StatusItemRenderable {
     /// 处理失败时回退四角星形矢量图
     static let arkBadgeLogo: NSImage? = {
         if let icon = NSImage(named: "VolcanoArkLogo"),
+           let mono = makeMonochromeSilhouette(icon) {
+            return mono
+        }
+        return sparkleFallbackImage
+    }()
+
+    /// 智谱 GLM 徽章 Logo 缓存：ZhipuLogo 单色化（去底 + 置黑），
+    /// 处理失败时回退四角星形矢量图
+    static let zhipuBadgeLogo: NSImage? = {
+        if let icon = NSImage(named: "ZhipuLogo"),
            let mono = makeMonochromeSilhouette(icon) {
             return mono
         }

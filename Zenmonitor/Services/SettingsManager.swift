@@ -41,6 +41,7 @@ final class SettingsManager {
         static let cachedLastUpdated = "cached_last_updated"
         static let deepseekAPIKey = "deepseek_api_key"
         static let kimiAPIKey = "kimi_api_key"
+        static let zhipuAPIKey = "zhipu_api_key"
         static let arkAccessKey = "ark_access_key"
         static let arkSecretKey = "ark_secret_key"
         static let statusBarPrefix = "statusbar_enabled_"
@@ -100,6 +101,13 @@ final class SettingsManager {
     var kimiAPIKey: String? {
         get { defaults.string(forKey: Keys.kimiAPIKey) }
         set { defaults.set(newValue, forKey: Keys.kimiAPIKey) }
+    }
+
+    /// 智谱开放平台 API Key（GLM Coding Plan 专用 Key，与推理共用），
+    /// 用于查询控制台监控端点的订阅配额。与其他源 Key 相互独立。
+    var zhipuAPIKey: String? {
+        get { defaults.string(forKey: Keys.zhipuAPIKey) }
+        set { defaults.set(newValue, forKey: Keys.zhipuAPIKey) }
     }
 
     // MARK: - 火山方舟 AK/SK
