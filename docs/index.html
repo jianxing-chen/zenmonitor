@@ -110,7 +110,7 @@
   }
 
   /* ── 区块标题 ── */
-  section { padding: 72px 0; }
+  section { padding: 72px 0; scroll-margin-top: 53px; }  /* 锚点跳转贴合粘性导航 */
   .section-title { font-size: 32px; font-weight: 700; letter-spacing: -0.01em; text-align: center; }
   .section-sub { color: var(--text-secondary); text-align: center; margin-top: 10px; font-size: 16px; }
 
@@ -164,6 +164,19 @@
   .download h2 { font-size: 30px; font-weight: 700; }
   .download p { color: var(--text-secondary); margin: 12px auto 28px; max-width: 520px; }
   .download .steps { font-size: 13px; color: var(--text-secondary); margin-top: 20px; }
+
+  /* ── 支持项目（赞赏码） ── */
+  .qrcards { display: flex; gap: 20px; justify-content: center; margin-top: 40px; flex-wrap: wrap; }
+  .qrcard {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 16px; padding: 18px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: transform 0.2s ease;
+  }
+  .qrcard:hover { transform: translateY(-3px); }
+  .qrcard img { height: 210px; width: auto; border-radius: 10px; background: #fff; }
+  .qrcard span { font-size: 13px; color: var(--text-secondary); }
+  .qrcard { min-width: 232px; }  /* 两张卡片宽度一致（码图宽高比不同，固定高度下补齐） */
 
   /* ── 页脚 ── */
   footer {
@@ -303,10 +316,28 @@
   </div>
 </section>
 
+<section id="support">
+  <div class="container">
+    <h2 class="section-title">支持项目</h2>
+    <p class="section-sub">如果 Zenmonitor 帮到了你，可以请作者喝杯茶，支撑这个开源项目持续维护</p>
+    <div class="qrcards">
+      <div class="qrcard">
+        <img src="assets/qr-wechat.png" alt="微信赞赏码">
+        <span>微信扫码赞赏</span>
+      </div>
+      <div class="qrcard">
+        <img src="assets/qr-alipay.png" alt="支付宝收款码">
+        <span>支付宝扫码赞赏</span>
+      </div>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="container">
     <span>Zenmonitor · <a href="https://github.com/jianxing-chen/zenmonitor/blob/main/LICENSE" target="_blank">MIT License</a> © jianxing-chen</span>
     <span>
+      <a href="#support">☕ 赞助支持</a> ·
       <a href="https://github.com/jianxing-chen/zenmonitor" target="_blank">GitHub</a> ·
       <a href="https://github.com/jianxing-chen/zenmonitor/releases" target="_blank">Releases</a> ·
       <a href="https://github.com/jianxing-chen/zenmonitor/issues" target="_blank">Issues</a>

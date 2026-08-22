@@ -5,6 +5,7 @@
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org/)
 [![GitHub release](https://img.shields.io/github/v/release/jianxing-chen/zenmonitor)](https://github.com/jianxing-chen/zenmonitor/releases)
 [![Website](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-%E5%9C%A8%E7%BA%BF%E8%AE%BF%E9%97%AE-0071e3)](https://jianxing-chen.github.io/zenmonitor/)
+[![赞助支持](https://img.shields.io/badge/%E8%B5%9E%E8%B5%90-%E5%BE%AE%E4%BF%A1_%E6%94%AF%E4%BB%98%E5%AE%9D-07C160)](#赞助支持)
 
 **macOS 菜单栏多源 AI 用量监控工具**——把各家 AI 服务的配额、余额与消耗实时放进菜单栏，一眼掌握，不占 Dock、不占窗口。
 
@@ -112,6 +113,14 @@ SourceRegistry 注册中心（六源注册 / 全局定时器 / 每源倍率调�
 ## 🤝 贡献
 
 欢迎提交 Issue 与 Pull Request！新源接入请参考上方[架构](#️-架构)四步法。
+
+## 赞助支持
+
+如果 Zenmonitor 帮到了你，欢迎请作者喝杯茶，支撑这个开源项目持续维护：
+
+| 微信赞赏 | 支付宝赞赏 |
+|:---:|:---:|
+| <img src="docs/assets/qr-wechat.png" width="220" alt="微信赞赏码"> | <img src="docs/assets/qr-alipay.png" width="220" alt="支付宝收款码"> |
 
 ## 📄 License 与致谢
 
