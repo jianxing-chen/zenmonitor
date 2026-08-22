@@ -181,7 +181,9 @@ final class ZenmuxAPIService: MonitoredSource {
     }
 
     private func clearForMissingAPIKey() {
-        lastError = ZenmuxAPIErrorType.noAPIKey.localizedDescription
+        // 未配置 Key 时静默置空（与其他五源一致）：下拉面板不显示占位，
+        // 仅「已配置但拉取失败」才透传错误；配置引导由设置面板承担
+        lastError = nil
         clearCachedSnapshotState()
     }
 

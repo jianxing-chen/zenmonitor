@@ -225,10 +225,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
-    /// 源是否有可展示的状态栏内容：Zenmux 无数据时有 Logo 回退，始终可见；
+    /// 源是否有可展示的状态栏内容：Zenmux 已配置 Key 但暂无数据时有 Logo 回退；
+    /// 未配置 Key 的源不占用状态栏（与下拉面板静默隐藏规则一致）；
     /// 配额型需双窗口，余额型需有快照
     private func statusContentAvailable(for source: any MonitoredSource) -> Bool {
-        if source.sourceID == "zenmux" { return true }
+        if source.sourceID == "zenmux" {
+            return SettingsManager.shared.apiKey?.isEmpty == false
+        }
         guard let snapshot = source.snapshot else { return false }
         switch snapshot {
         case .quota(let quota): return quota.windows.count >= 2
@@ -329,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         // 显示有数据的源 + 已配置但拉取失败的源（后者展示错误占位块，
         // 透传真实原因如「账号未订阅 Coding Plan」，避免用户配了 Key 却看不到任何反馈；
-        // 未配置 Key 的源除 Zenmux 外均静默置空 lastError，不会被误收入列）。
+        // 未配置 Key 的源均静默置空 lastError，不会出现在面板中）。
         // 没有任何源有数据时，显示全部占位（引导用户配置）。
         // 顺序按用户自定义的区块排序（未设置时回退注册表顺序），
         // 菜单每次打开重建，排序变更无需重启即时生效
