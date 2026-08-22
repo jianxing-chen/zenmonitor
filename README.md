@@ -4,8 +4,11 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%2015.0%2B-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org/)
 [![GitHub release](https://img.shields.io/github/v/release/jianxing-chen/zenmonitor)](https://github.com/jianxing-chen/zenmonitor/releases)
+[![Website](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-%E5%9C%A8%E7%BA%BF%E8%AE%BF%E9%97%AE-0071e3)](https://jianxing-chen.github.io/zenmonitor/)
 
 **macOS 菜单栏多源 AI 用量监控工具**——把各家 AI 服务的配额、余额与消耗实时放进菜单栏，一眼掌握，不占 Dock、不占窗口。
+
+🌐 **官方网页**：[jianxing-chen.github.io/zenmonitor](https://jianxing-chen.github.io/zenmonitor/)（产品介绍与下载入口）
 
 ## ✨ 功能特性
 
