@@ -22,6 +22,8 @@ enum ZhipuAPIError: LocalizedError {
     case httpError(Int)
     case decodeError
     case emptyData
+    /// 业务级错误：服务端 success=false，透传 msg（如账号未订阅 Coding Plan）
+    case businessError(String)
 
     var errorDescription: String? {
         switch self {
@@ -37,6 +39,8 @@ enum ZhipuAPIError: LocalizedError {
             return "智谱数据解析失败"
         case .emptyData:
             return "智谱未返回配额数据"
+        case .businessError(let msg):
+            return "智谱: \(msg)"
         }
     }
 }
@@ -142,11 +146,13 @@ final class ZhipuAPIService: MonitoredSource {
             guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
                 throw ZhipuAPIError.decodeError
             }
-            let parsed = ZhipuUsageParser.parse(body: json)
-            guard !parsed.isEmpty else {
-                throw ZhipuAPIError.emptyData
+            // 业务级失败（如账号未订阅 Coding Plan）时透传服务端 msg，
+            // 便于用户在面板/设置卡片看到真实原因而非笼统的「无数据」
+            let result = ZhipuUsageParser.parseWithMessage(json)
+            guard !result.windows.isEmpty else {
+                throw result.message.map { ZhipuAPIError.businessError($0) } ?? ZhipuAPIError.emptyData
             }
-            windows = parsed
+            windows = result.windows
             lastError = nil
             lastUpdated = Date()
             saveCachedUsages(data)

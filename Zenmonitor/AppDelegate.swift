@@ -322,12 +322,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         headerItem.view = hosting
         menu.addItem(headerItem)
 
-        // 只显示有数据的源；没有任何源有数据时，才显示全部占位（引导用户配置）。
+        // 显示有数据的源 + 已配置但拉取失败的源（后者展示错误占位块，
+        // 透传真实原因如「账号未订阅 Coding Plan」，避免用户配了 Key 却看不到任何反馈；
+        // 未配置 Key 的源除 Zenmux 外均静默置空 lastError，不会被误收入列）。
+        // 没有任何源有数据时，显示全部占位（引导用户配置）。
         // 顺序按用户自定义的区块排序（未设置时回退注册表顺序），
         // 菜单每次打开重建，排序变更无需重启即时生效
         let ordered = registry.orderedSources
         let withData = ordered.filter { $0.snapshot != nil }
-        let displaySources = withData.isEmpty ? ordered : withData
+        // errored 条件已含 snapshot == nil，与 withData 天然互斥，直接拼接
+        let errored = ordered.filter { $0.snapshot == nil && $0.lastError != nil }
+        let visible = withData + errored
+        let displaySources = visible.isEmpty ? ordered : visible
 
         // 动态构建每个启用的源区块（源之间不加分隔线：
         // 各区块已有圆角卡片背景与描边，仅靠卡片自身分组，减少视觉噪音）

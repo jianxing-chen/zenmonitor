@@ -54,13 +54,22 @@ enum ZhipuUsageParser {
 
     /// 解析响应体，返回按 session → weekly 排序的窗口列表；无法解析返回空
     static func parse(body: [String: Any]) -> [ZhipuQuotaWindow] {
-        // 业务级失败：上游明确报错时不渲染假数据
-        if let success = body["success"] as? Bool, !success { return [] }
+        parseWithMessage(body).windows
+    }
+
+    /// 同 parse，额外返回业务级错误文案（success=false 时的服务端 msg，
+    /// 如「当前用户不存在 coding plan」），供服务层向用户透传真实原因
+    static func parseWithMessage(_ body: [String: Any]) -> (windows: [ZhipuQuotaWindow], message: String?) {
+        // 业务级失败：不渲染假数据，但透传服务端 msg（含订阅状态等真实原因）
+        if let success = body["success"] as? Bool, !success {
+            let msg = pickString(body, keys: ["msg", "message", "error", "errorMessage", "error_message"])
+            return ([], msg.isEmpty ? nil : msg)
+        }
 
         // 防御 data 信封
         let data = (body["data"] as? [String: Any]) ?? body
         guard let limits = pickArray(data, keys: ["limits", "limitInfos", "limit_infos", "windows"]) else {
-            return []
+            return ([], nil)
         }
 
         // 槽位先存（百分比, 重置时间），窗口对象在槽位确定后按正确 kind 构造
@@ -109,7 +118,7 @@ enum ZhipuUsageParser {
         if let slot = weekly {
             windows.append(ZhipuQuotaWindow(kind: .weekly, usedPercent: slot.pct, resetsAt: slot.reset))
         }
-        return windows
+        return (windows, nil)
     }
 
     // MARK: - 窗口分类
