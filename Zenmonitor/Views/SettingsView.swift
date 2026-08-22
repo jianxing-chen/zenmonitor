@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import AppKit
 import ServiceManagement
 import UniformTypeIdentifiers
 
@@ -154,6 +155,9 @@ struct SettingsView: View {
 
     // MARK: - 底部栏
 
+    /// 检查更新进行中状态（防重复点击 + 按钮加载态）
+    @State private var isCheckingUpdate = false
+
     private var bottomBar: some View {
         HStack(spacing: 12) {
             Text("设置会自动保存，本窗口可随时关闭。")
@@ -162,11 +166,95 @@ struct SettingsView: View {
 
             Spacer()
 
+            Button {
+                checkForUpdates()
+            } label: {
+                if isCheckingUpdate {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label("检查更新", systemImage: "arrow.down.circle")
+                }
+            }
+            .buttonStyle(SettingsProminentButtonStyle())
+            .disabled(isCheckingUpdate)
+
             Button("完成") {
                 NSApp.keyWindow?.close()
             }
             .buttonStyle(SettingsProminentButtonStyle())
         }
+    }
+
+    // MARK: - 检查更新（GitHub Releases 最新版本对比）
+
+    /// 拉取 GitHub 最新 Release 与当前应用版本对比：
+    /// 有新版本 → 弹窗提供「前往下载」；已最新 → 提示；网络异常 → 友好提示。
+    private func checkForUpdates() {
+        guard !isCheckingUpdate else { return }
+        isCheckingUpdate = true
+        Task {
+            defer { isCheckingUpdate = false }
+            do {
+                let apiURL = URL(string: "https://api.github.com/repos/jianxing-chen/zenmonitor/releases/latest")!
+                var request = URLRequest(url: apiURL)
+                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+                request.timeoutInterval = 10
+                let (data, _) = try await URLSession.shared.data(for: request)
+                guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      let tag = json["tag_name"] as? String else {
+                    throw URLError(.cannotParseResponse)
+                }
+                let releaseURL = (json["html_url"] as? String)
+                    ?? "https://github.com/jianxing-chen/zenmonitor/releases/latest"
+                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+                if Self.isReleaseNewer(tag, than: current) {
+                    showUpdateAvailableAlert(tag: tag, releaseURL: releaseURL)
+                } else {
+                    showInfoAlert(title: "当前已是最新版本",
+                                  info: "Zenmonitor 已是最新版本（当前 \(current)）。")
+                }
+            } catch {
+                showInfoAlert(title: "网络异常", info: "检查更新失败，请稍后重试。")
+            }
+        }
+    }
+
+    /// 版本比较：去除 v 前缀后逐段数字对比（如 v2.8 > 2.0）
+    private static func isReleaseNewer(_ tag: String, than current: String) -> Bool {
+        func parse(_ s: String) -> [Int] {
+            s.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+                .split(separator: ".")
+                .compactMap { Int($0) }
+        }
+        let a = parse(tag), b = parse(current)
+        for i in 0..<max(a.count, b.count) {
+            let x = i < a.count ? a[i] : 0
+            let y = i < b.count ? b[i] : 0
+            if x != y { return x > y }
+        }
+        return false
+    }
+
+    /// 新版本可用弹窗：提供「前往下载」跳转 Release 页
+    private func showUpdateAvailableAlert(tag: String, releaseURL: String) {
+        let alert = NSAlert()
+        alert.messageText = "发现新版本 \(tag)"
+        alert.informativeText = "有新的版本可用，建议前往 GitHub Releases 下载。"
+        alert.addButton(withTitle: "前往下载")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() == .alertFirstButtonReturn, let url = URL(string: releaseURL) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// 普通信息弹窗（已是最新 / 网络异常）
+    private func showInfoAlert(title: String, info: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = info
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 }
 

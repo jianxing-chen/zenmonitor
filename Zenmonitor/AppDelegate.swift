@@ -483,14 +483,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         isDropdownMenuOpen = true
         if !menu.items.isEmpty { menu.removeAllItems() }
         buildMenuItems(into: menu)
-        // 菜单打开时刷新所有源（DeepSeek 走「菜单打开时拉取」策略）
-        Task { [weak self] in
-            guard let self, !self.isShuttingDown else { return }
-            await self.registry.refreshAll()
-            self.syncStatusItems()
-            // 打开触发的刷新返回后同步面板内容（新数据立即可见）
-            self.rebuildMenuIfOpen()
-        }
+        // 打开时不再主动拉取：自动刷新由 SourceRegistry 全局定时器驱动（跟随「自动刷新间隔」+ 每源倍率），
+        // 打开期间的数据到达由 onAutoRefreshTick → rebuildMenuIfOpen 同步；手动刷新走底部刷新按钮
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -1378,7 +1372,7 @@ final class DeepSeekBalanceStatusView: NSView, StatusItemRenderable {
 
 // MARK: - 菜单全局 Header 视图
 
-/// 全局 Header：简化为一行，左侧 App 名，右侧操作按钮（暂停/刷新）
+/// 全局 Header：简化为一行，左侧 App 名，右侧仅保留暂停/继续按钮（手动刷新统一走底部操作行，避免冗余）
 struct MenuGlobalHeaderView: View {
     let registry: SourceRegistry
 
@@ -1416,21 +1410,6 @@ struct MenuGlobalHeaderView: View {
                     .foregroundStyle(zenmux.isPaused ? .green : .orange)
                     .accessibilityLabel(zenmux.isPaused ? "恢复自动刷新" : "暂停自动刷新")
                 }
-
-                // 刷新按钮
-                Button {
-                    Task {
-                        await registry.refreshAll()
-                    }
-                } label: {
-                    Image(systemName: registry.isAnyRefreshing ? "arrow.clockwise.circle.fill" : "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .disabled(registry.isAnyRefreshing)
-                .accessibilityLabel("刷新所有源")
             }
         }
         .padding(.horizontal, 14)
