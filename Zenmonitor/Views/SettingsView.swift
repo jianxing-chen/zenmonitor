@@ -91,6 +91,8 @@ struct SettingsView: View {
             ZhipuSourceCard()
         case "ark":
             VolcanoArkSourceCard()
+        case "tavily":
+            TavilySourceCard()
         default:
             // 未来新源的通用卡片
             GenericSourceCard(source: source)
@@ -192,14 +194,9 @@ struct ZenmuxSourceCard: View {
                         .resizable()
                         .frame(width: 26, height: 26)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Zenmux Platform API")
-                        .font(.headline)
-                        .foregroundStyle(SettingsPalette.primaryText)
-                    Text("保存后立即拉取最新配额数据。")
-                        .font(.subheadline)
-                        .foregroundStyle(SettingsPalette.secondaryText)
-                }
+                Text("Zenmux")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
 
                 Spacer(minLength: 8)
 
@@ -209,11 +206,13 @@ struct ZenmuxSourceCard: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .frame(width: 116)
+                .fixedSize()
                 .onChange(of: apiDomain) { _, newValue in
                     settings.apiDomain = newValue
                     apiService.settingsDidChange(forceFetch: true)
                 }
+
+                RefreshMultiplierPicker(sourceID: "zenmux")
             }
 
             // API Key 输入
@@ -305,15 +304,15 @@ struct DeepSeekSourceCard: View {
             HStack(spacing: 10) {
                 Image("DeepSeekLogo")
                     .resizable()
-                    .frame(width: 24, height: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("DeepSeek API")
-                        .font(.headline)
-                        .foregroundStyle(SettingsPalette.primaryText)
-                    Text("用于下拉面板显示余额，菜单打开时拉取。")
-                        .font(.subheadline)
-                        .foregroundStyle(SettingsPalette.secondaryText)
-                }
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                Text("DeepSeek")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                RefreshMultiplierPicker(sourceID: "deepseek")
             }
 
             // API Key 输入
@@ -398,15 +397,15 @@ struct KimiSourceCard: View {
             HStack(spacing: 10) {
                 Image("KimiLogo")
                     .resizable()
-                    .frame(width: 20, height: 20)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Kimi Code API")
-                        .font(.headline)
-                        .foregroundStyle(SettingsPalette.primaryText)
-                    Text("用于下拉面板显示 5 小时/周配额，菜单打开时拉取。")
-                        .font(.subheadline)
-                        .foregroundStyle(SettingsPalette.secondaryText)
-                }
+                    .scaledToFit()
+                    .frame(width: 22, height: 22)
+                Text("Kimi Code")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                RefreshMultiplierPicker(sourceID: "kimi")
             }
 
             // API Key 输入
@@ -497,15 +496,11 @@ struct ZhipuSourceCard: View {
             HStack(spacing: 10) {
                 Image("ZhipuLogo")
                     .resizable()
-                    .frame(width: 20, height: 20)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("智谱 GLM Coding Plan")
-                        .font(.headline)
-                        .foregroundStyle(SettingsPalette.primaryText)
-                    Text("用于下拉面板显示 5 小时/周配额。")
-                        .font(.subheadline)
-                        .foregroundStyle(SettingsPalette.secondaryText)
-                }
+                    .scaledToFit()
+                    .frame(width: 22, height: 22)
+                Text("智谱 GLM")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
 
                 Spacer(minLength: 8)
 
@@ -517,7 +512,7 @@ struct ZhipuSourceCard: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .frame(width: 128)
+                .fixedSize()
                 .onChange(of: region) { _, newValue in
                     settings.zhipuRegion = newValue
                     // 旧平台的缓存语义不同，立即清除避免启动时短暂显示错误数据
@@ -529,6 +524,8 @@ struct ZhipuSourceCard: View {
                         ZhipuAPIService.shared.invalidateForMissingKey()
                     }
                 }
+
+                RefreshMultiplierPicker(sourceID: "zhipu")
             }
 
             // API Key 输入
@@ -637,15 +634,15 @@ struct VolcanoArkSourceCard: View {
             HStack(spacing: 10) {
                 Image("VolcanoArkLogo")
                     .resizable()
-                    .frame(width: 24, height: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("火山方舟 Agent Plan")
-                        .font(.headline)
-                        .foregroundStyle(SettingsPalette.primaryText)
-                    Text("显示 AFP 配额（5H/1D/7D/1M），菜单打开时拉取。")
-                        .font(.subheadline)
-                        .foregroundStyle(SettingsPalette.secondaryText)
-                }
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                Text("火山方舟")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                RefreshMultiplierPicker(sourceID: "ark")
             }
 
             // AccessKey 输入
@@ -863,6 +860,130 @@ private struct StatusBarToggle: View {
         .onChange(of: isOn) { _, newValue in
             settings.setStatusBarEnabled(newValue, for: sourceID)
             NotificationCenter.default.post(name: .statusBarSettingsChanged, object: nil)
+        }
+    }
+}
+
+// MARK: - Tavily 源配置卡片
+
+struct TavilySourceCard: View {
+    @State private var apiKeyInput: String
+    @State private var showKeySaved = false
+
+    private let settings = SettingsManager.shared
+
+    init() {
+        _apiKeyInput = State(initialValue: SettingsManager.shared.tavilyAPIKey ?? "")
+    }
+
+    /// 输入框去空白后是否为空（空 = 删除 Key 操作）
+    private var keyInputIsEmpty: Bool {
+        apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题 + 刷新倍率选择器
+            HStack(spacing: 10) {
+                Image("TavilyLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                Text("Tavily")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                RefreshMultiplierPicker(sourceID: "tavily")
+            }
+
+            // API Key 输入
+            HStack(spacing: 10) {
+                SecureField("请输入 Tavily API Key（tvly-...）", text: $apiKeyInput)
+                    .keyFieldStyle()
+
+                Button {
+                    let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        // 删除 Key：置空配置并立即清空用量数据与缓存（同时重置节流）
+                        settings.tavilyAPIKey = nil
+                        TavilyAPIService.shared.invalidateForMissingKey()
+                    } else {
+                        settings.tavilyAPIKey = trimmed
+                        // 更换 Key 后旧数据/节流状态不再适用，先清空再立即拉取新数据
+                        TavilyAPIService.shared.invalidateForMissingKey()
+                        Task { await TavilyAPIService.shared.refresh(force: true) }
+                    }
+                    flashSavedBadge()
+                } label: {
+                    // 输入框为空时按钮变为「删除」，允许清除已保存的 Key
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                .buttonStyle(SettingsProminentButtonStyle())
+            }
+
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
+            SourceCardFooter(
+                sourceID: "tavily",
+                consoleURL: URL(string: "https://app.tavily.com/home")!,
+                consoleHint: "前往 Tavily 控制台创建 Key",
+                badge: feedbackOrStatusBadge
+            )
+        }
+        .settingsCard()
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
+    }
+
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        let configured = settings.tavilyAPIKey?.isEmpty == false
+        return StatusBadge(title: configured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - 每源刷新倍率选择器（全部源卡片头部行共用）
+
+/// 每源自动刷新倍率：实际周期 = 全局间隔 × 倍率（如全局 60s + ×4 = 240s）。
+/// 倍率变更下一轮定时器即生效，无需重启。
+private struct RefreshMultiplierPicker: View {
+    let sourceID: String
+    @State private var multiplier: Int
+
+    private let settings = SettingsManager.shared
+
+    init(sourceID: String) {
+        self.sourceID = sourceID
+        _multiplier = State(initialValue: SettingsManager.shared.refreshMultiplier(for: sourceID))
+    }
+
+    var body: some View {
+        Picker("", selection: $multiplier) {
+            ForEach(SettingsManager.allowedRefreshMultipliers, id: \.self) { value in
+                Text("间隔 ×\(value)").tag(value)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(width: 76)
+        .onChange(of: multiplier) { _, newValue in
+            settings.setRefreshMultiplier(newValue, for: sourceID)
         }
     }
 }

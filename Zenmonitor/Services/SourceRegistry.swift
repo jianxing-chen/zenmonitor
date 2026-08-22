@@ -5,7 +5,7 @@
 //  监控源注册中心
 //  集中管理所有已接入的监控源，向 AppDelegate / 设置界面提供统一访问入口。
 //
-//  当前版本内置 Zenmux、DeepSeek、Kimi、智谱 GLM、火山方舟五个源；
+//  当前版本内置 Zenmux、DeepSeek、Kimi、智谱 GLM、火山方舟、Tavily 六个源；
 //  未来支持「随时添加新源」时，可扩展为动态注册/注销与用户启用/禁用列表。
 //
 
@@ -20,22 +20,27 @@ final class SourceRegistry {
     /// 所有已注册的监控源（当前内置，未来可动态扩展）
     private(set) var sources: [any MonitoredSource] = []
 
-    /// 全局自动刷新定时器：四源统一的自动刷新频率唯一来源，
+    /// 全局自动刷新定时器：各源统一的自动刷新频率唯一来源，
     /// 间隔跟随 SettingsManager.refreshInterval（设置面板「自动刷新间隔」）
     @ObservationIgnored private var autoRefreshTask: Task<Void, Never>?
+
+    /// 每源最近一次自动刷新 tick 的时间戳（用于每源倍率调度：
+    /// 实际周期 = 全局间隔 × 该源倍率，未到时机本轮跳过）
+    @ObservationIgnored private var lastAutoTick: [String: Date] = [:]
 
     /// 全局自动刷新每轮 tick 完成后的回调（AppDelegate 用于同步打开中的下拉面板）
     @ObservationIgnored var onAutoRefreshTick: (@MainActor () -> Void)?
 
     private init() {
         // 内置源注册：Zenmux 为主（配额型），DeepSeek（余额型）、Kimi（配额型）、
-        // 智谱 GLM（配额型）、火山方舟 Agent Plan（配额型）为辅
+        // 智谱 GLM（配额型）、火山方舟 Agent Plan（配额型）、Tavily（配额型）为辅
         sources = [
             ZenmuxAPIService.shared,
             DeepSeekAPIService.shared,
             KimiCodeAPIService.shared,
             ZhipuAPIService.shared,
-            ArkAPIService.shared
+            ArkAPIService.shared,
+            TavilyAPIService.shared
         ]
     }
 
@@ -77,9 +82,33 @@ final class SourceRegistry {
                 let interval = SettingsManager.shared.refreshInterval
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 guard !Task.isCancelled else { break }
-                await self?.refreshAll(force: false)
+                await self?.autoTick()
                 guard !Task.isCancelled else { break }
                 self?.onAutoRefreshTick?()
+            }
+        }
+    }
+
+    /// 全局定时器每轮 tick：按各源倍率判断是否到期（实际周期 = 全局间隔 × 倍率，
+    /// 倍率可在设置卡片随时调整，下一轮即生效），到期的源并行刷新，
+    /// 未到期的本轮跳过；首次未记录时间戳的源视为到期（与旧行为一致）
+    private func autoTick() async {
+        let interval = SettingsManager.shared.refreshInterval
+        let now = Date()
+        let due = sources.filter { source in
+            let period = interval * Double(SettingsManager.shared.refreshMultiplier(for: source.sourceID))
+            guard let last = lastAutoTick[source.sourceID] else { return true }
+            return now.timeIntervalSince(last) >= period
+        }
+        guard !due.isEmpty else { return }
+        for source in due {
+            lastAutoTick[source.sourceID] = now
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for source in due {
+                group.addTask { @MainActor in
+                    await source.refresh(force: false)
+                }
             }
         }
     }

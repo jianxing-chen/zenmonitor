@@ -71,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             _ = StatusBarView.kimiBadgeLogo
             _ = StatusBarView.zhipuBadgeLogo
             _ = StatusBarView.arkBadgeLogo
+            _ = StatusBarView.tavilyBadgeLogo
             _ = PanelLogo.zenmux
         }
     }
@@ -294,6 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 view.showsPercentText = false
             } else if source.sourceID == "ark" {
                 view.badgeImage = StatusBarView.arkBadgeLogo
+                view.showsSourceBadge = true
+                view.showsPercentText = false
+            } else if source.sourceID == "tavily" {
+                view.badgeImage = StatusBarView.tavilyBadgeLogo
                 view.showsSourceBadge = true
                 view.showsPercentText = false
             }
@@ -1201,6 +1206,16 @@ final class StatusBarView: NSView, StatusItemRenderable {
         return sparkleFallbackImage
     }()
 
+    /// Tavily 徽章 Logo 缓存：TavilyLogo 单色化（去底 + 置黑），
+    /// 处理失败时回退四角星形矢量图
+    static let tavilyBadgeLogo: NSImage? = {
+        if let icon = NSImage(named: "TavilyLogo"),
+           let mono = makeMonochromeSilhouette(icon) {
+            return mono
+        }
+        return sparkleFallbackImage
+    }()
+
     /// Kimi 徽章白色版已废弃（模板 tint 方案，同 appLogoInverted）
 
     /// 通用单色化：降采样 → 区域生长去底 → 亮度兜底清残留 → 置纯黑 → 包围盒裁剪。
@@ -1444,24 +1459,37 @@ struct SourceQuotaSection: View {
     /// （SwiftUI 状态变更不一定触发宿主视图 KVO）
     var onToggleDetails: (() -> Void)?
 
-    /// 仅 Zenmux 区块支持折叠次要信息（extraMetrics / flows / USD 明细）；
-    /// Kimi 等其余配额源保持原有完整展示，不受影响
-    private var isCollapsible: Bool { source.sourceID == "zenmux" }
+    /// 仅 Zenmux 与 Tavily 区块支持折叠次要信息（extraMetrics / flows / USD 明细）；
+    /// Kimi 等其余配额源保持原有完整展示，不受影响（Tavily 端点限流严格，
+    /// 默认折叠减少视觉噪音，与 Zenmux 交互一致）
+    private var isCollapsible: Bool { source.sourceID == "zenmux" || source.sourceID == "tavily" }
+
+    /// 面板区块品牌 Logo 尺寸分档（ViewBuilder 内不便多语句分支，抽为函数）
+    private func panelLogoSize(for sourceID: String) -> CGFloat {
+        switch sourceID {
+        case "deepseek":      return 24
+        case "tavily":        return 22
+        case "zhipu", "ark":  return 20
+        case "kimi":          return 18
+        default:              return 20
+        }
+    }
 
     /// 次要详情是否可见（非折叠源恒为 true）
     private var showDetails: Bool { !isCollapsible || expanded }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             // 源头部：Logo + 名称 + 状态 + 展开/收起入口（统一为一行）
             HStack(spacing: 8) {
-                // Logo：有品牌 Logo 的源 20pt（DeepSeek 24pt）；Zenmux 用透明底 App Logo 26pt，
-                // 与设置面板共用 PanelLogo 缓存，两处效果一致
                 if let logoName = source.logoImageName {
+                    // 按源分档：DeepSeek 24；Tavily 22；智谱/火山方舟 20；Kimi 图形视觉占比大取 18。
+                    // scaledToFit 保证在 frame 内等比居中，不偏移不拉伸
                     Image(logoName)
                         .resizable()
-                        .frame(width: source.sourceID == "deepseek" ? 24 : 20,
-                               height: source.sourceID == "deepseek" ? 24 : 20)
+                        .scaledToFit()
+                        .frame(width: panelLogoSize(for: source.sourceID),
+                               height: panelLogoSize(for: source.sourceID))
                 } else if let logo = PanelLogo.zenmux {
                     Image(nsImage: logo)
                         .resizable()
@@ -1502,7 +1530,7 @@ struct SourceQuotaSection: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.top, 10)
+            .padding(.top, 6)
 
             // 配额窗口列表（5h / 7d / ...）；折叠时隐藏 flows/USD 文本，
             // 保留进度条/百分比/重置时间；本列表是收尾元素时（无指标卡或折叠态）
@@ -1744,7 +1772,7 @@ struct SourceBalanceSection: View {
     let snapshot: BalanceSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             // 源头部：Logo + 名称（与配额区块样式统一；尺寸与设置面板一致）
             HStack(spacing: 8) {
                 // Logo
@@ -1773,9 +1801,11 @@ struct SourceBalanceSection: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.top, 10)
+            .padding(.top, 6)
 
-            // 余额内容：今日用量（左）+ 余额（右）同行；无今日用量时保持大数字布局
+            // 余额内容：今日用量（左）+ 余额（右）同行；无今日用量时保持大数字布局。
+            // 包裹与 QuotaRow 同规格的内层小框（圆角 10 + 浅色填充），
+            // 与配额型源的进度条行视觉统一；仅此一层，不与外层卡片叠加背景/描边
             VStack(alignment: .leading, spacing: 8) {
                 if let usageText = snapshot.todayUsageText {
                     // 合并行：左今日用量（含弱化的起点说明），右余额
@@ -1830,16 +1860,21 @@ struct SourceBalanceSection: View {
                 // 赠金/充值明细不再展示（实际意义不大）；breakdown 数据仍正常获取，
                 // 仅移除渲染，不影响余额计算与今日用量统计
             }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(0.04))
+            )
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
         }
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.03))  // 次要源用浅色背景
+                .fill(Color.primary.opacity(0.06))  // 与配额区块同规格，风格统一
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

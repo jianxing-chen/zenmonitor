@@ -68,9 +68,11 @@ final class SettingsManager {
         static let zhipuRegion = "zhipu_region"
         static let arkAccessKey = "ark_access_key"
         static let arkSecretKey = "ark_secret_key"
+        static let tavilyAPIKey = "tavily_api_key"
         static let statusBarPrefix = "statusbar_enabled_"
         static let menuOrder = "menu_source_order"
         static let apiDomain = "api_domain"
+        static let refreshMultiplierPrefix = "refresh_multiplier_"
     }
 
     /// 刷新间隔下限（秒）。低于此值会触发忙循环与高频请求，写入时强制钳制。
@@ -160,6 +162,29 @@ final class SettingsManager {
     var arkSecretKey: String? {
         get { defaults.string(forKey: Keys.arkSecretKey) }
         set { defaults.set(newValue, forKey: Keys.arkSecretKey) }
+    }
+
+    // MARK: - Tavily API Key
+
+    /// Tavily API Key（tvly-...），与推理接口共用，用于查询 /usage 用量端点。
+    var tavilyAPIKey: String? {
+        get { defaults.string(forKey: Keys.tavilyAPIKey) }
+        set { defaults.set(newValue, forKey: Keys.tavilyAPIKey) }
+    }
+
+    // MARK: - 每源刷新倍率
+
+    /// 可选的自动刷新倍率（实际周期 = 全局间隔 × 倍率）
+    static let allowedRefreshMultipliers = [1, 2, 4, 10]
+
+    /// 某源的自动刷新倍率，默认 1（跟随全局间隔）；非法值回退默认
+    func refreshMultiplier(for sourceID: String) -> Int {
+        let stored = defaults.integer(forKey: Keys.refreshMultiplierPrefix + sourceID)
+        return Self.allowedRefreshMultipliers.contains(stored) ? stored : 1
+    }
+
+    func setRefreshMultiplier(_ multiplier: Int, for sourceID: String) {
+        defaults.set(multiplier, forKey: Keys.refreshMultiplierPrefix + sourceID)
     }
 
     // MARK: - 状态栏显示开关
