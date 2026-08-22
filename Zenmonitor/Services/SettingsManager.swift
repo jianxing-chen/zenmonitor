@@ -28,6 +28,29 @@ enum ZenmuxAPIDomain: String, CaseIterable, Codable {
     }
 }
 
+/// 智谱 GLM 所属平台。国内版（bigmodel.cn）与国际版（z.ai）为独立账号体系，
+/// API Key 互不通用，需使用对应平台的 Key；两平台的监控端点路径与响应结构一致。
+enum ZhipuRegion: String, CaseIterable, Codable {
+    case domestic = "bigmodel.cn"
+    case international = "z.ai"
+
+    /// 配额监控端点 host（两平台共用路径 /api/monitor/usage/quota/limit）
+    var quotaHost: String {
+        switch self {
+        case .domestic:       return "https://open.bigmodel.cn"
+        case .international:  return "https://api.z.ai"
+        }
+    }
+
+    /// 对应平台的 Key 管理页（用于设置中的外链）
+    var consoleURL: URL {
+        switch self {
+        case .domestic:       return URL(string: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys")!
+        case .international:  return URL(string: "https://z.ai/manage-apikey/apikey-list")!
+        }
+    }
+}
+
 final class SettingsManager {
     static let shared = SettingsManager()
 
@@ -42,6 +65,7 @@ final class SettingsManager {
         static let deepseekAPIKey = "deepseek_api_key"
         static let kimiAPIKey = "kimi_api_key"
         static let zhipuAPIKey = "zhipu_api_key"
+        static let zhipuRegion = "zhipu_region"
         static let arkAccessKey = "ark_access_key"
         static let arkSecretKey = "ark_secret_key"
         static let statusBarPrefix = "statusbar_enabled_"
@@ -108,6 +132,19 @@ final class SettingsManager {
     var zhipuAPIKey: String? {
         get { defaults.string(forKey: Keys.zhipuAPIKey) }
         set { defaults.set(newValue, forKey: Keys.zhipuAPIKey) }
+    }
+
+    /// 智谱平台选择，默认国内版。切换后需使用对应平台的 Key（两者不通用），
+    /// 服务层下次刷新即走新平台端点。
+    var zhipuRegion: ZhipuRegion {
+        get {
+            if let raw = defaults.string(forKey: Keys.zhipuRegion),
+               let value = ZhipuRegion(rawValue: raw) {
+                return value
+            }
+            return .domestic
+        }
+        set { defaults.set(newValue.rawValue, forKey: Keys.zhipuRegion) }
     }
 
     // MARK: - 火山方舟 AK/SK

@@ -475,11 +475,15 @@ struct KimiSourceCard: View {
 struct ZhipuSourceCard: View {
     @State private var apiKeyInput: String
     @State private var showKeySaved = false
+    /// 平台选择（国内版/国际版）：两平台账号独立、Key 不通用，
+    /// 切换后需换用对应平台的 Key
+    @State private var region: ZhipuRegion
 
     private let settings = SettingsManager.shared
 
     init() {
         _apiKeyInput = State(initialValue: SettingsManager.shared.zhipuAPIKey ?? "")
+        _region = State(initialValue: SettingsManager.shared.zhipuRegion)
     }
 
     /// 输入框去空白后是否为空（空 = 删除 Key 操作）
@@ -489,7 +493,7 @@ struct ZhipuSourceCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 头部：Logo + 标题
+            // 头部：Logo + 标题 + 平台选择（与 Zenmux 域名选择器同布局）
             HStack(spacing: 10) {
                 Image("ZhipuLogo")
                     .resizable()
@@ -498,9 +502,32 @@ struct ZhipuSourceCard: View {
                     Text("智谱 GLM Coding Plan")
                         .font(.headline)
                         .foregroundStyle(SettingsPalette.primaryText)
-                    Text("用于下拉面板显示 5 小时/周配额，随统一自动刷新间隔拉取。")
+                    Text("用于下拉面板显示 5 小时/周配额。")
                         .font(.subheadline)
                         .foregroundStyle(SettingsPalette.secondaryText)
+                }
+
+                Spacer(minLength: 8)
+
+                // 平台切换（与 Zenmux 域名切换同模式）：端点路径两平台一致，
+                // 仅 host 不同；切换后旧平台缓存失效，已配 Key 时立即重新拉取
+                Picker("", selection: $region) {
+                    Text("国内版").tag(ZhipuRegion.domestic)
+                    Text("国际版 (z.ai)").tag(ZhipuRegion.international)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 128)
+                .onChange(of: region) { _, newValue in
+                    settings.zhipuRegion = newValue
+                    // 旧平台的缓存语义不同，立即清除避免启动时短暂显示错误数据
+                    UserDefaults.standard.removeObject(forKey: "zhipu_cached_usages")
+                    UserDefaults.standard.removeObject(forKey: "zhipu_cached_updated")
+                    if settings.zhipuAPIKey?.isEmpty == false {
+                        Task { await ZhipuAPIService.shared.refresh() }
+                    } else {
+                        ZhipuAPIService.shared.invalidateForMissingKey()
+                    }
                 }
             }
 
@@ -543,8 +570,10 @@ struct ZhipuSourceCard: View {
             // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
             SourceCardFooter(
                 sourceID: "zhipu",
-                consoleURL: URL(string: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys")!,
-                consoleHint: "前往智谱开放平台创建 Key",
+                consoleURL: region.consoleURL,
+                consoleHint: region == .domestic
+                    ? "前往智谱开放平台创建 Key"
+                    : "前往 Z.ai 控制台创建 Key",
                 badge: feedbackOrStatusBadge
             )
         }

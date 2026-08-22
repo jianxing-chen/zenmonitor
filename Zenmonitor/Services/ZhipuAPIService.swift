@@ -3,7 +3,10 @@
 //  zenmux-monitor
 //
 //  智谱 GLM Coding Plan 配额查询 API 客户端
-//  接口：GET https://open.bigmodel.cn/api/monitor/usage/quota/limit
+//  接口：GET {host}/api/monitor/usage/quota/limit
+//    国内版 host = https://open.bigmodel.cn，国际版 host = https://api.z.ai
+//    （两平台独立账号体系、Key 互不通用；端点路径与响应结构一致，
+//     端点选择跟随 SettingsManager.zhipuRegion）
 //
 //  说明：该端点为控制台内部监控接口（未收录于官方文档），由 cc-switch /
 //  glm-usage 等开源项目长期实证可用；与 Coding Plan 推理共用同一把 Key。
@@ -32,7 +35,7 @@ enum ZhipuAPIError: LocalizedError {
         case .networkError(let err):
             return "智谱网络错误: \(err.localizedDescription)"
         case .unauthorized:
-            return "智谱鉴权失败，请检查 API Key 是否有效（需 Coding Plan 专用 Key）"
+            return "智谱鉴权失败，请检查 API Key（国内版/国际版 Key 不通用，需与所选平台匹配）"
         case .httpError(let code):
             return "智谱 HTTP 错误: \(code)"
         case .decodeError:
@@ -50,8 +53,12 @@ enum ZhipuAPIError: LocalizedError {
 final class ZhipuAPIService: MonitoredSource {
     static let shared = ZhipuAPIService()
 
-    /// 国内版控制台监控端点（host 常量化，未来支持国际版 z.ai 只需加域名选项）
-    private let quotaURL = URL(string: "https://open.bigmodel.cn/api/monitor/usage/quota/limit")!
+    /// 配额监控端点：host 跟随平台选择（国内/国际），路径两平台一致。
+    /// 国内直连 api.z.ai 已实测可达（~0.7s），无需代理。
+    private var quotaURL: URL {
+        URL(string: SettingsManager.shared.zhipuRegion.quotaHost
+            + "/api/monitor/usage/quota/limit")!
+    }
     private let cacheKey = "zhipu_cached_usages"
     private let cacheUpdatedKey = "zhipu_cached_updated"
 
@@ -145,6 +152,12 @@ final class ZhipuAPIService: MonitoredSource {
             }
             guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
                 throw ZhipuAPIError.decodeError
+            }
+            // 该端点鉴权失败也返回 HTTP 200，靠 body code=1000 标识
+            // （实测：无效 Key → {"code":1000,"msg":"Authentication Failed"}），
+            // 显式归类为鉴权错误，提示使用对应平台的 Key（两者不通用）
+            if let code = json["code"] as? Int, code == 1000 {
+                throw ZhipuAPIError.unauthorized
             }
             // 业务级失败（如账号未订阅 Coding Plan）时透传服务端 msg，
             // 便于用户在面板/设置卡片看到真实原因而非笼统的「无数据」
