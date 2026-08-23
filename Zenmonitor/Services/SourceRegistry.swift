@@ -5,7 +5,7 @@
 //  监控源注册中心
 //  集中管理所有已接入的监控源，向 AppDelegate / 设置界面提供统一访问入口。
 //
-//  当前版本内置 Zenmux、DeepSeek、Kimi、智谱 GLM、火山方舟、Tavily 六个源；
+//  当前版本内置 Zenmux、DeepSeek、Kimi、智谱 GLM、火山方舟、Tavily、OpenCode 七个源；
 //  未来支持「随时添加新源」时，可扩展为动态注册/注销与用户启用/禁用列表。
 //
 
@@ -33,14 +33,16 @@ final class SourceRegistry {
 
     private init() {
         // 内置源注册：Zenmux 为主（配额型），DeepSeek（余额型）、Kimi（配额型）、
-        // 智谱 GLM（配额型）、火山方舟 Agent Plan（配额型）、Tavily（配额型）为辅
+        // 智谱 GLM（配额型）、火山方舟 Agent Plan（配额型）、Tavily（配额型）、
+        // OpenCode Go（配额型）为辅
         sources = [
             ZenmuxAPIService.shared,
             DeepSeekAPIService.shared,
             KimiCodeAPIService.shared,
             ZhipuAPIService.shared,
             ArkAPIService.shared,
-            TavilyAPIService.shared
+            TavilyAPIService.shared,
+            OpenCodeAPIService.shared
         ]
     }
 

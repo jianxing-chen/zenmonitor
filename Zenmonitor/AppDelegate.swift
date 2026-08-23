@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             _ = StatusBarView.zhipuBadgeLogo
             _ = StatusBarView.arkBadgeLogo
             _ = StatusBarView.tavilyBadgeLogo
+            _ = StatusBarView.openCodeBadgeLogo
             _ = PanelLogo.zenmux
         }
     }
@@ -234,7 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         guard let snapshot = source.snapshot else { return false }
         switch snapshot {
-        case .quota(let quota): return quota.windows.count >= 2
+        case .quota(let quota): return quota.windows.count >= 1
         case .balance: return true
         }
     }
@@ -302,6 +303,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 view.showsPercentText = false
             } else if source.sourceID == "tavily" {
                 view.badgeImage = StatusBarView.tavilyBadgeLogo
+                view.showsSourceBadge = true
+                view.showsPercentText = false
+            } else if source.sourceID == "opencode" {
+                view.badgeImage = StatusBarView.openCodeBadgeLogo
                 view.showsSourceBadge = true
                 view.showsPercentText = false
             }
@@ -874,7 +879,7 @@ final class StatusBarView: NSView, StatusItemRenderable {
         guard let source = targetSource,
               let snapshot = source.snapshot,
               case .quota(let quotaSnapshot) = snapshot,
-              quotaSnapshot.windows.count >= 2 else {
+              quotaSnapshot.windows.count >= 1 else {
             return nil
         }
         return (source, quotaSnapshot)
@@ -928,26 +933,39 @@ final class StatusBarView: NSView, StatusItemRenderable {
         let bottomY = topY - barH - spacing
         let corner: CGFloat = 2.25
 
-        // 前两个窗口：5h 在上，7d 在下（按 QuotaSnapshot.windows 顺序）
+        // 窗口进度条：双窗口源（5h 在上、7d 在下）；单窗口源（如 Tavily 仅 1M）
+        // 居中绘制单条，防 windows[1] 越界
         let windows = quotaSnapshot.windows
-        drawBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
-                pct: windows[0].pct, radius: corner, palette: palette)
-        drawBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
-                pct: windows[1].pct, radius: corner, palette: palette)
+        if windows.count >= 2 {
+            drawBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
+                    pct: windows[0].pct, radius: corner, palette: palette)
+            drawBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
+                    pct: windows[1].pct, radius: corner, palette: palette)
+        } else {
+            drawBar(x: layout.barX, y: topY - (barH + spacing) / 2,
+                    width: layout.barWidth, height: barH,
+                    pct: windows[0].pct, radius: corner, palette: palette)
+        }
 
-        // Kimi 项不画百分比文字，仅保留双进度条以缩减横向占用
+        // 徽章类源（Kimi/智谱/方舟/Tavily/OpenCode）不画百分比文字，仅保留进度条以缩减横向占用
         guard showsPercentText else { return }
 
         let textAttrs: [NSAttributedString.Key: Any] = [
             .font: Self.percentFont,
             .foregroundColor: palette.primaryText
         ]
-        drawPercent(text: percentStr(windows[0].pct),
-                rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
-                barY: topY, barH: barH, attrs: textAttrs)
-        drawPercent(text: percentStr(windows[1].pct),
-                rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
-                barY: bottomY, barH: barH, attrs: textAttrs)
+        if windows.count >= 2 {
+            drawPercent(text: percentStr(windows[0].pct),
+                    rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
+                    barY: topY, barH: barH, attrs: textAttrs)
+            drawPercent(text: percentStr(windows[1].pct),
+                    rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
+                    barY: bottomY, barH: barH, attrs: textAttrs)
+        } else {
+            drawPercent(text: percentStr(windows[0].pct),
+                    rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
+                    barY: topY - (barH + spacing) / 2, barH: barH, attrs: textAttrs)
+        }
     }
 
     private func drawPaused(_ snapshot: QuotaSnapshot) {
@@ -960,8 +978,10 @@ final class StatusBarView: NSView, StatusItemRenderable {
         let windows = snapshot.windows
         drawDimmedBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
                       pct: windows[0].pct, palette: palette)
-        drawDimmedBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
-                      pct: windows[1].pct, palette: palette)
+        if windows.count >= 2 {
+            drawDimmedBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
+                          pct: windows[1].pct, palette: palette)
+        }
 
         let attrs: [NSAttributedString.Key: Any] = [
             .font: Self.pausedFont,
@@ -1207,6 +1227,16 @@ final class StatusBarView: NSView, StatusItemRenderable {
     /// 处理失败时回退四角星形矢量图
     static let tavilyBadgeLogo: NSImage? = {
         if let icon = NSImage(named: "TavilyLogo"),
+           let mono = makeMonochromeSilhouette(icon) {
+            return mono
+        }
+        return sparkleFallbackImage
+    }()
+
+    /// OpenCode 徽章 Logo 缓存：OpenCodeLogo 单色化（去底 + 置黑），
+    /// 处理失败时回退四角星形矢量图
+    static let openCodeBadgeLogo: NSImage? = {
+        if let icon = NSImage(named: "OpenCodeLogo"),
            let mono = makeMonochromeSilhouette(icon) {
             return mono
         }

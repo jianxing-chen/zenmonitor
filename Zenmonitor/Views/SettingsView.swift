@@ -94,6 +94,8 @@ struct SettingsView: View {
             VolcanoArkSourceCard()
         case "tavily":
             TavilySourceCard()
+        case "opencode":
+            OpenCodeSourceCard()
         default:
             // 未来新源的通用卡片
             GenericSourceCard(source: source)
@@ -1041,6 +1043,105 @@ struct TavilySourceCard: View {
                                icon: "checkmark.circle.fill", tint: .green)
         }
         let configured = settings.tavilyAPIKey?.isEmpty == false
+        return StatusBadge(title: configured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - OpenCode 源配置卡片
+
+struct OpenCodeSourceCard: View {
+    @State private var apiKeyInput: String
+    @State private var showKeySaved = false
+
+    private let settings = SettingsManager.shared
+
+    init() {
+        _apiKeyInput = State(initialValue: SettingsManager.shared.opencodeAPIKey ?? "")
+    }
+
+    /// 输入框去空白后是否为空（空 = 删除 Key 操作）
+    private var keyInputIsEmpty: Bool {
+        apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题 + 刷新倍率选择器（纵向构图，尺寸与 Zenmux 一致）
+            HStack(spacing: 10) {
+                Image("OpenCodeLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                Text("OpenCode Go")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                RefreshMultiplierPicker(sourceID: "opencode")
+            }
+
+            // API Key 输入
+            HStack(spacing: 10) {
+                SecureField("请输入 OpenCode Go API Key", text: $apiKeyInput)
+                    .keyFieldStyle()
+
+                Button {
+                    let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        // 删除 Key：置空配置并立即清空用量数据与缓存（同时重置节流）
+                        settings.opencodeAPIKey = nil
+                        OpenCodeAPIService.shared.invalidateForMissingKey()
+                    } else {
+                        settings.opencodeAPIKey = trimmed
+                        // 更换 Key 后旧数据不再适用，先清空再立即拉取新数据；
+                        // 首次配置自动开启状态栏显示（与其他源一致）
+                        OpenCodeAPIService.shared.invalidateForMissingKey()
+                        if !settings.statusBarEnabled(for: "opencode") {
+                            settings.setStatusBarEnabled(true, for: "opencode")
+                            NotificationCenter.default.post(name: .statusBarSettingsChanged, object: nil)
+                        }
+                        Task { await OpenCodeAPIService.shared.refresh(force: true) }
+                    }
+                    flashSavedBadge()
+                } label: {
+                    // 输入框为空时按钮变为「删除」，允许清除已保存的 Key
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                .buttonStyle(SettingsProminentButtonStyle())
+            }
+
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
+            SourceCardFooter(
+                sourceID: "opencode",
+                consoleURL: URL(string: "https://opencode.ai/auth")!,
+                consoleHint: "前往 OpenCode Zen 控制台获取 Key",
+                badge: feedbackOrStatusBadge
+            )
+        }
+        .settingsCard()
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
+    }
+
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        let configured = settings.opencodeAPIKey?.isEmpty == false
         return StatusBadge(title: configured ? "已配置" : "未配置",
                            icon: "bolt.fill", tint: configured ? .green : .secondary)
     }

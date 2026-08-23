@@ -69,6 +69,7 @@ final class SettingsManager {
         static let arkAccessKey = "ark_access_key"
         static let arkSecretKey = "ark_secret_key"
         static let tavilyAPIKey = "tavily_api_key"
+        static let opencodeAPIKey = "opencode_api_key"
         static let statusBarPrefix = "statusbar_enabled_"
         static let menuOrder = "menu_source_order"
         static let apiDomain = "api_domain"
@@ -170,6 +171,14 @@ final class SettingsManager {
     var tavilyAPIKey: String? {
         get { defaults.string(forKey: Keys.tavilyAPIKey) }
         set { defaults.set(newValue, forKey: Keys.tavilyAPIKey) }
+    }
+
+    // MARK: - OpenCode Go API Key
+
+    /// OpenCode Go 订阅网关 API Key（与推理共用），用于查询 /zen/go/v1/usage 用量端点。
+    var opencodeAPIKey: String? {
+        get { defaults.string(forKey: Keys.opencodeAPIKey) }
+        set { defaults.set(newValue, forKey: Keys.opencodeAPIKey) }
     }
 
     // MARK: - 每源刷新倍率
