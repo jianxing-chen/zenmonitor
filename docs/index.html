@@ -55,6 +55,7 @@
   }
   nav .container { display: flex; align-items: center; justify-content: space-between; height: 52px; }
   .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+  a.nav-brand { text-decoration: none; color: inherit; }  /* 品牌可点击回顶部，保持原样式 */
   .nav-logo {
     width: 26px; height: 26px; border-radius: 7px; overflow: hidden;
     display: flex; align-items: center; justify-content: center;
@@ -200,7 +201,7 @@
 
 <nav>
   <div class="container">
-    <div class="nav-brand"><span class="nav-logo"><img src="assets/logos/zenmux.png" alt="Zenmonitor"></span> Zenmonitor</div>
+    <a href="#top" class="nav-brand"><span class="nav-logo"><img src="assets/logos/zenmux.png" alt="Zenmonitor"></span> Zenmonitor</a>
     <div class="nav-links">
       <a href="#features">功能</a>
       <a href="#sources">监控源</a>
@@ -210,7 +211,7 @@
   </div>
 </nav>
 
-<header class="hero">
+<header class="hero" id="top">
   <div class="container">
     <div class="hero-badge"><span class="dot"></span> 开源免费 · 本地优先 · <span id="latestVersion">v2.10</span></div>
     <h1>AI 用量，<span class="gradient">常驻菜单栏</span></h1>
