@@ -229,12 +229,8 @@ final class OpenCodeAPIService: MonitoredSource {
         )
     }
 
-    /// 按最高窗口用量映射状态：<50% 正常 / <80% 监控中 / <100% 已限制 / ≥100% 已暂停
-    /// （5h 窗口为硬频控，额度用尽即拦截请求——未启用余额回退时语义成立）
+    /// 三档精简：仅最高窗口打满（5h 硬频控真实生效）才标已暂停；用量水位由进度条颜色表达
     private func mapStatus(_ maxPercent: Double) -> StatusIndicator {
-        if maxPercent >= 100 { return .suspended }
-        if maxPercent >= 80 { return .limited }
-        if maxPercent >= 50 { return .warning }
-        return .healthy
+        maxPercent >= 100 ? .suspended : .healthy
     }
 }

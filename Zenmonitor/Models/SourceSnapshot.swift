@@ -20,17 +20,13 @@ import SwiftUI
 /// 通用的健康度/状态指示，用于配额型与余额型源的头部展示。
 /// 与 Zenmux 的 AccountStatus 解耦，各源自行映射。
 enum StatusIndicator {
-    case healthy        // 绿：正常
-    case warning        // 黄：警告/监控中
-    case limited        // 橙：已限制
-    case suspended      // 红：已暂停/封禁
+    case healthy        // 绿：正常（数据正常获取且未被真实封禁；用量水位由进度条颜色三档表达）
+    case suspended      // 红：已暂停（账户被平台真实限制/封禁，或额度完全耗尽导致请求被拒绝）
     case unknown        // 灰：未知/无数据
 
     var color: Color {
         switch self {
         case .healthy:   return .green
-        case .warning:   return .yellow
-        case .limited:   return .orange
         case .suspended: return .red
         case .unknown:   return .gray
         }
@@ -39,8 +35,6 @@ enum StatusIndicator {
     var displayName: String {
         switch self {
         case .healthy:   return "正常"
-        case .warning:   return "监控中"
-        case .limited:   return "已限制"
         case .suspended: return "已暂停"
         case .unknown:   return "未知"
         }

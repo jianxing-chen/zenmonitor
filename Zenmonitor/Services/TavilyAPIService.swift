@@ -289,13 +289,9 @@ final class TavilyAPIService: MonitoredSource {
         return cal.date(from: comps) ?? Date()
     }
 
-    /// 按用量映射状态：<50% 正常 / <80% 监控中 / <100% 已限制 / ≥100% 已暂停
-    /// （额度耗尽且未开按量超额时请求会被真实拒绝，语义成立）
+    /// 三档精简：仅额度完全耗尽（请求被真实拒绝）才标已暂停；用量水位由进度条颜色表达
     private func mapStatus(_ percent: Double) -> StatusIndicator {
-        if percent >= 100 { return .suspended }
-        if percent >= 80 { return .limited }
-        if percent >= 50 { return .warning }
-        return .healthy
+        percent >= 100 ? .suspended : .healthy
     }
 
     private func formatNum(_ v: Double) -> String {

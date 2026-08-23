@@ -329,11 +329,11 @@ final class ZenmuxAPIService: MonitoredSource {
         return "到期 \(fmt.string(from: date))"
     }
 
+    /// 映射服务端真实账户状态：monitored/abusive 属用量观察态（水位由进度条颜色表达），
+    /// 归入正常；仅真实封禁/暂停才标红
     private func mapStatus(_ raw: String) -> StatusIndicator {
         switch ZenmuxAccountStatus.from(raw) {
-        case .healthy:   return .healthy
-        case .monitored: return .warning
-        case .abusive:   return .limited
+        case .healthy, .monitored, .abusive: return .healthy
         case .suspended, .banned: return .suspended
         case .unknown:   return .unknown
         }

@@ -205,7 +205,7 @@ final class DeepSeekAPIService: MonitoredSource {
                 (label: "赠金", value: String(format: "%.2f", info.granted)),
                 (label: "充值", value: String(format: "%.2f", info.toppedUp))
             ],
-            status: data.is_available ? .healthy : .limited
+            status: data.is_available ? .healthy : .suspended
         )
         // 今日用量：本地余额差值推算，无当日采样记录时保持 nil（UI 不渲染该行）
         if let stats = usageStore.todayStats() {

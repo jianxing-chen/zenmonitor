@@ -220,12 +220,9 @@ final class KimiCodeAPIService: MonitoredSource {
         )
     }
 
-    /// 按最高窗口用量映射状态：<50% 正常 / <80% 监控中 / <100% 已限制 / ≥100% 已暂停
+    /// 三档精简：仅 5H 窗口打满（硬频控真实生效）才标已暂停；用量水位由进度条颜色表达
     private func mapStatus(_ maxPercent: Double) -> StatusIndicator {
-        if maxPercent >= 100 { return .suspended }
-        if maxPercent >= 80 { return .limited }
-        if maxPercent >= 50 { return .warning }
-        return .healthy
+        maxPercent >= 100 ? .suspended : .healthy
     }
 
     private func formatNum(_ v: Double) -> String {

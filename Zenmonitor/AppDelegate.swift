@@ -862,10 +862,11 @@ final class StatusBarView: NSView, StatusItemRenderable {
             let aspect = Self.appLogo.map { $0.size.width / max($0.size.height, 1) } ?? 1
             return NSSize(width: max(22, (h * aspect).rounded() + 2), height: 22)
         }
-        // 不画百分比文字时（Kimi）：宽度 = 徽章占位 + 进度条，不再预留文字区，
-        // 进度条区 28→24pt（缩短 ~15% 进一步减少空间占用）
+        // 不画百分比文字时（徽章源：Kimi/智谱/方舟/Tavily/OpenCode）：
+        // 宽度 = 徽章占位 + 进度条；进度条区 24→22pt（再缩短 ~9%，约 10%），
+        // 减少徽章源菜单栏横向占用（Zenmux 不受影响）
         if !showsPercentText {
-            return NSSize(width: Self.badgeLeading + 24, height: 22)
+            return NSSize(width: Self.badgeLeading + 22, height: 22)
         }
         // 带源标识徽章时宽度相应加宽
         return NSSize(width: 49 + (showsSourceBadge ? Self.badgeLeading : 0), height: 22)
