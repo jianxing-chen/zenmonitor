@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Zenmonitor — macOS 菜单栏 AI 用量监控</title>
-<meta name="description" content="Zenmonitor：把六家 AI 服务的配额与余额实时放进 macOS 菜单栏。开源、免费、本地优先。">
+<meta name="description" content="Zenmonitor：把七家 AI 服务的配额与余额实时放进 macOS 菜单栏。开源、免费、本地优先。">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/favicon.png">
 <style>
@@ -114,9 +114,10 @@
   .section-title { font-size: 32px; font-weight: 700; letter-spacing: -0.01em; text-align: center; }
   .section-sub { color: var(--text-secondary); text-align: center; margin-top: 10px; font-size: 16px; }
 
-  /* ── 功能亮点 ── */
-  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; margin-top: 44px; }
+  /* ── 功能亮点（固定宽卡片 + 换行末行居中，避免奇数项尾行落单难看） ── */
+  .features { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 44px; }
   .feature {
+    flex: 0 1 300px;
     background: var(--card); border: 1px solid var(--card-border);
     border-radius: 16px; padding: 24px;
     transition: transform 0.2s ease;
@@ -130,9 +131,10 @@
   .feature h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
   .feature p { font-size: 14px; color: var(--text-secondary); }
 
-  /* ── 支持的源 ── */
-  .sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 44px; }
+  /* ── 支持的源（固定宽卡片 + 换行末行居中，7 源 = 3+3+1 末行居中） ── */
+  .sources { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 44px; }
   .source {
+    flex: 0 1 290px;
     background: var(--card); border: 1px solid var(--card-border);
     border-radius: 14px; padding: 18px 20px;
   }
@@ -210,9 +212,9 @@
 
 <header class="hero">
   <div class="container">
-    <div class="hero-badge"><span class="dot"></span> 开源免费 · 本地优先 · <span id="latestVersion">v2.9.1</span></div>
+    <div class="hero-badge"><span class="dot"></span> 开源免费 · 本地优先 · <span id="latestVersion">v2.10</span></div>
     <h1>AI 用量，<span class="gradient">常驻菜单栏</span></h1>
-    <p class="tagline">Zenmonitor 把六家 AI 服务的配额、余额与消耗实时放进 macOS 菜单栏——一眼掌握，不占 Dock、不占窗口。</p>
+    <p class="tagline">Zenmonitor 把七家 AI 服务的配额、余额与消耗实时放进 macOS 菜单栏——一眼掌握，不占 Dock、不占窗口。</p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="https://github.com/jianxing-chen/zenmonitor/releases/latest" target="_blank">⬇ 免费下载</a>
       <a class="btn btn-secondary" href="https://github.com/jianxing-chen/zenmonitor" target="_blank">查看源码 →</a>
@@ -231,8 +233,8 @@
     <div class="features">
       <div class="feature">
         <div class="icon">📊</div>
-        <h3>六源统一监控</h3>
-        <p>Zenmux / DeepSeek / Kimi Code / 智谱 GLM / 火山方舟 / Tavily，配额与余额两种形态统一抽象，架构可随时扩展新源。</p>
+        <h3>七源统一监控</h3>
+        <p>Zenmux / DeepSeek / Kimi Code / 智谱 GLM / 火山方舟 / Tavily / OpenCode Go，配额与余额两种形态统一抽象，架构可随时扩展新源。</p>
       </div>
       <div class="feature">
         <div class="icon">🎛️</div>
@@ -271,7 +273,7 @@
 <section id="sources">
   <div class="container">
     <h2 class="section-title">支持的监控源</h2>
-    <p class="section-sub">六家平台，一套体验</p>
+    <p class="section-sub">七家平台，一套体验</p>
     <div class="sources">
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/zenmux.png" alt="Zenmux"></span><h4>Zenmux</h4><span class="tag">配额型</span></div>
@@ -302,6 +304,11 @@
         <div class="head"><span class="glyph"><img src="assets/logos/tavily.png" alt="Tavily"></span><h4>Tavily</h4><span class="tag">配额型</span></div>
         <p>月度 Credits 配额 + 端点消耗明细 · 客户端节流适配端点限流</p>
         <div class="bar"><i style="width:6%"></i></div>
+      </div>
+      <div class="source">
+        <div class="head"><span class="glyph"><img src="assets/logos/opencode.png" alt="OpenCode Go"></span><h4>OpenCode Go</h4><span class="tag">配额型</span></div>
+        <p>5H / 7D / 1M 三窗口配额 + 精确重置时间 · 官方 /usage 端点（与推理同 Key）</p>
+        <div class="bar"><i style="width:14%"></i></div>
       </div>
     </div>
   </div>
