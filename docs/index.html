@@ -210,7 +210,7 @@
 
 <header class="hero">
   <div class="container">
-    <div class="hero-badge"><span class="dot"></span> 开源免费 · 本地优先 · v2.8</div>
+    <div class="hero-badge"><span class="dot"></span> 开源免费 · 本地优先 · <span id="latestVersion">v2.9.1</span></div>
     <h1>AI 用量，<span class="gradient">常驻菜单栏</span></h1>
     <p class="tagline">Zenmonitor 把六家 AI 服务的配额、余额与消耗实时放进 macOS 菜单栏——一眼掌握，不占 Dock、不占窗口。</p>
     <div class="hero-actions">
@@ -349,6 +349,16 @@
     </span>
   </div>
 </footer>
+
+<script>
+  // 版本号自动同步 GitHub Releases 最新版本（失败时保持静态回退值，永不再过时）
+  fetch('https://api.github.com/repos/jianxing-chen/zenmonitor/releases/latest')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (d) {
+      if (d.tag_name) { document.getElementById('latestVersion').textContent = d.tag_name; }
+    })
+    .catch(function () {});
+</script>
 
 </body>
 </html>
