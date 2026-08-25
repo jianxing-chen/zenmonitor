@@ -120,6 +120,14 @@
     width: 100%; border: var(--bd) solid var(--ink); border-radius: 16px; display: block;
     box-shadow: var(--shadow); background: var(--card);
   }
+  /* ── 装饰：橘子汽水贴纸（支持项目板块） ── */
+  #support { position: relative; }
+  .support-soda {
+    position: absolute; top: 56px; right: 8px; width: 82px; height: 116px;
+    z-index: 3; pointer-events: none;
+    filter: drop-shadow(4px 4px 0 var(--ink));
+  }
+  .support-soda svg { width: 100%; height: 100%; display: block; }
 
   /* ── 区块标题 ── */
   section { padding: 72px 0; scroll-margin-top: 58px; border-top: var(--bd) solid var(--ink); }
@@ -256,7 +264,7 @@
   footer a:hover { border-bottom-color: var(--ink); }
 
   @media (max-width: 720px) {
-    .hero::before, .hero::after { display: none; }
+    .hero::before, .hero::after, .support-soda { display: none; }
     .hero { padding: 52px 0 36px; }
     .nav-links { display: none; }
     section { padding: 52px 0; }
@@ -397,6 +405,17 @@
 
 <section id="support">
   <div class="container">
+    <div class="support-soda" aria-hidden="true">
+      <svg viewBox="0 0 64 90" xmlns="http://www.w3.org/2000/svg">
+        <path d="M37 40 L47 12 L43 4" fill="none" stroke="#141414" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M37 40 L47 12 L43 4" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5"/>
+        <path d="M12 32 L52 32 L46 78 L18 78 Z" fill="#FF9F45" stroke="#141414" stroke-width="3" stroke-linejoin="round"/>
+        <ellipse cx="32" cy="32" rx="20" ry="5" fill="#FFC98A" stroke="#141414" stroke-width="3"/>
+        <rect x="17" y="48" width="30" height="15" fill="#FFFFFF" stroke="#141414" stroke-width="2.5" rx="2"/>
+        <circle cx="25" cy="42" r="2.3" fill="#141414"/>
+        <circle cx="39" cy="44" r="1.7" fill="#141414"/>
+      </svg>
+    </div>
     <h2 class="section-title">支持项目</h2>
     <p class="section-sub">如果 Zenmonitor 帮到了你，可以请作者喝杯蜜雪冰城，支撑这个开源项目持续维护</p>
     <div class="qrcards">
