@@ -128,4 +128,4 @@ SourceRegistry 注册中心（七源注册 / 全局定时器 / 每源倍率调�
 
 [MIT](LICENSE) © jianxing-chen
 
-致谢：各平台用量端点的字段形态参考了开源社区的实证实现——[cc-switch](https://github.com/farion1231/cc-switch)（智谱/火山）、[token-monitor](https://github.com/lioensky/token-monitor)（Kimi）、[glm-usage](https://github.com/showlotus/glm-usage)（智谱）；品牌图形版权归各平台所有，仅用于本应用内的源标识展示。
+致谢：各平台用量端点的字段形态参考了开源社区的实证实现——[cc-switch](https://github.com/farion1231/cc-switch)（智谱/火山）、[token-monitor](https://github.com/Javis603/token-monitor)（token-monitor）、[glm-usage](https://github.com/showlotus/glm-usage)（智谱）；品牌图形版权归各平台所有，仅用于本应用内的源标识展示。
