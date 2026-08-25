@@ -49,6 +49,9 @@ final class DeepSeekAPIService: MonitoredSource {
 
     /// 最近一次成功获取的余额数据
     var balanceData: DeepSeekBalanceResponse?
+    /// 缓存的快照：数据变化时构建一次（避免计算属性每次访问都重建），
+    /// 状态栏/面板高频读取时零分配（M1 优化）
+    private(set) var snapshot: SourceSnapshot?
     /// 最近一次错误文案（成功后清空）
     var lastError: String?
     /// 最近一次成功更新时间
@@ -108,6 +111,9 @@ final class DeepSeekAPIService: MonitoredSource {
               let decoded = try? JSONDecoder().decode(DeepSeekBalanceResponse.self, from: data) else { return }
         balanceData = decoded
         lastUpdated = UserDefaults.standard.object(forKey: "deepseek_cached_updated") as? Date
+        if !decoded.balance_infos.isEmpty {
+            snapshot = .balance(makeBalanceSnapshot(from: decoded))
+        }
     }
 
     private func saveCachedBalance() {
@@ -120,8 +126,11 @@ final class DeepSeekAPIService: MonitoredSource {
 
     /// Key 已删除/未配置：清空余额数据、缓存与用量采样历史。
     /// 设置界面删除 Key 时直接调用，无需等下次拉取即生效。
+    /// 已处于干净态时直接返回，避免自动定时器每 tick 重复清理 + 触发重渲染（B3 修复）
     func invalidateForMissingKey() {
+        guard balanceData != nil || lastError != nil || snapshot != nil else { return }
         if balanceData != nil { balanceData = nil }
+        snapshot = nil
         UserDefaults.standard.removeObject(forKey: cacheKey)
         UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
         lastError = nil
@@ -159,6 +168,12 @@ final class DeepSeekAPIService: MonitoredSource {
             balanceData = decoded
             lastError = nil
             lastUpdated = Date()
+            // 缓存快照（M1）：今日用量仅随整点采样/拉取变化，此处重建即可保持一致
+            if !decoded.balance_infos.isEmpty {
+                snapshot = .balance(makeBalanceSnapshot(from: decoded))
+            } else {
+                snapshot = nil
+            }
             saveCachedBalance()
             // 采样入账：记录当前余额用于今日用量差值统计（Key 更换时 store 自动清空历史）
             if let info = decoded.balance_infos.first {
@@ -181,11 +196,6 @@ final class DeepSeekAPIService: MonitoredSource {
     var displayName: String { "DeepSeek" }
 
     var logoImageName: String? { "DeepSeekLogo" }
-
-    var snapshot: SourceSnapshot? {
-        guard let data = balanceData, !data.balance_infos.isEmpty else { return nil }
-        return .balance(makeBalanceSnapshot(from: data))
-    }
 
     /// MonitoredSource 协议要求的统一刷新入口（手动/自动语义一致：无 Key 静默跳过）
     /// 注：今日用量的整点采样（startHourlySampling）为独立统计链路，与此处无关

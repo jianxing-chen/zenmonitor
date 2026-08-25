@@ -101,6 +101,14 @@ enum ArkUsageParser {
     }
 
     /// 时间值兼容：epoch 毫秒 / epoch 秒 / ISO8601 字符串
+    /// 共享静态 ISO8601 格式化器（M2 优化：避免每次调用重建）
+    private static let isoFmt = ISO8601DateFormatter()
+    private static let isoFmtFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     private static func parseDate(_ value: Any?) -> Date? {
         if let number = value as? Double {
             guard number > 0 else { return nil }
@@ -115,10 +123,8 @@ enum ArkUsageParser {
             if let epoch = Double(text), epoch > 0 {
                 return Date(timeIntervalSince1970: epoch < 20_000_000_000 ? epoch : epoch / 1000)
             }
-            let iso = ISO8601DateFormatter()
-            if let date = iso.date(from: text) { return date }
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return iso.date(from: text)
+            if let date = Self.isoFmt.date(from: text) { return date }
+            return Self.isoFmtFrac.date(from: text)
         }
         return nil
     }

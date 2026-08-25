@@ -65,6 +65,9 @@ final class TavilyAPIService: MonitoredSource {
 
     /// 最近一次成功解析的用量信息
     private(set) var usage: TavilyUsageInfo?
+    /// 缓存的快照：数据变化时构建一次（避免计算属性每次访问都重建），
+    /// 状态栏/面板高频读取时零分配（M1 优化）
+    private(set) var snapshot: SourceSnapshot?
     /// 最近一次错误文案（成功后清空）
     var lastError: String?
     /// 最近一次成功更新时间
@@ -100,6 +103,7 @@ final class TavilyAPIService: MonitoredSource {
               let parsed = TavilyUsageParser.parse(body: json) else { return }
         usage = parsed
         lastUpdated = UserDefaults.standard.object(forKey: cacheUpdatedKey) as? Date
+        snapshot = .quota(makeQuotaSnapshot())
     }
 
     private func saveCachedUsage(_ raw: Data) {
@@ -110,7 +114,9 @@ final class TavilyAPIService: MonitoredSource {
     /// Key 已删除/未配置：清空数据与缓存（同时重置节流状态）。
     /// 设置界面删除/更换 Key 时直接调用，无需等下次拉取即生效。
     func invalidateForMissingKey() {
+        guard usage != nil || lastError != nil || lastUpdated != nil || snapshot != nil else { return }
         usage = nil
+        snapshot = nil
         UserDefaults.standard.removeObject(forKey: cacheKey)
         UserDefaults.standard.removeObject(forKey: cacheUpdatedKey)
         lastError = nil
@@ -170,6 +176,7 @@ final class TavilyAPIService: MonitoredSource {
             usage = parsed
             lastError = nil
             lastUpdated = Date()
+            snapshot = .quota(makeQuotaSnapshot())
             saveCachedUsage(data)
             notifyStateChange()
         } catch let error as TavilyAPIError {
@@ -189,11 +196,6 @@ final class TavilyAPIService: MonitoredSource {
 
     /// 下拉面板区块头部使用 Tavily 品牌 Logo（与设置卡片一致）
     var logoImageName: String? { "TavilyLogo" }
-
-    var snapshot: SourceSnapshot? {
-        guard usage != nil else { return nil }
-        return .quota(makeQuotaSnapshot())
-    }
 
     /// MonitoredSource 协议要求的统一刷新入口（手动/自动语义一致：无 Key 静默跳过）
     func refresh(force: Bool) async {

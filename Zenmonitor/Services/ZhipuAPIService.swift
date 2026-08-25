@@ -64,6 +64,9 @@ final class ZhipuAPIService: MonitoredSource {
 
     /// 最近一次成功解析的配额窗口
     private(set) var windows: [ZhipuQuotaWindow] = []
+    /// 缓存的快照：数据变化时构建一次（避免计算属性每次访问都重建），
+    /// 状态栏/面板高频读取时零分配（M1 优化）
+    private(set) var snapshot: SourceSnapshot?
     /// 最近一次错误文案（成功后清空）
     var lastError: String?
     /// 最近一次成功更新时间
@@ -100,6 +103,7 @@ final class ZhipuAPIService: MonitoredSource {
         guard !parsed.isEmpty else { return }
         windows = parsed
         lastUpdated = UserDefaults.standard.object(forKey: cacheUpdatedKey) as? Date
+        snapshot = .quota(makeQuotaSnapshot())
     }
 
     private func saveCachedUsages(_ raw: Data) {
@@ -109,8 +113,12 @@ final class ZhipuAPIService: MonitoredSource {
 
     /// Key 已删除/未配置：清空数据与缓存。
     /// 设置界面删除 Key 时直接调用，无需等下次拉取即生效。
+    /// 已处于干净态（无数据/无错误）时直接返回：避免自动定时器每 tick 对
+    /// 未配置源重复写 UserDefaults + 触发全量重渲染（B3 修复）
     func invalidateForMissingKey() {
+        guard !windows.isEmpty || lastError != nil || lastUpdated != nil || snapshot != nil else { return }
         windows = []
+        snapshot = nil
         UserDefaults.standard.removeObject(forKey: cacheKey)
         UserDefaults.standard.removeObject(forKey: cacheUpdatedKey)
         lastError = nil
@@ -168,6 +176,7 @@ final class ZhipuAPIService: MonitoredSource {
             windows = result.windows
             lastError = nil
             lastUpdated = Date()
+            snapshot = .quota(makeQuotaSnapshot())
             saveCachedUsages(data)
             notifyStateChange()
         } catch let error as ZhipuAPIError {
@@ -187,11 +196,6 @@ final class ZhipuAPIService: MonitoredSource {
 
     /// 下拉面板区块头部使用智谱品牌 Logo（与设置卡片一致）
     var logoImageName: String? { "ZhipuLogo" }
-
-    var snapshot: SourceSnapshot? {
-        guard !windows.isEmpty else { return nil }
-        return .quota(makeQuotaSnapshot())
-    }
 
     /// MonitoredSource 协议要求的统一刷新入口（手动/自动语义一致：无 Key 静默跳过）
     func refresh(force: Bool) async {

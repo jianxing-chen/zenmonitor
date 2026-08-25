@@ -242,6 +242,14 @@ enum KimiUsageParser {
     }
 
     /// 时间值兼容：ISO8601 字符串 / epoch 秒 / epoch 毫秒
+    /// 共享静态 ISO8601 格式化器（M2 优化：避免每次调用重建）
+    private static let isoFmt = ISO8601DateFormatter()
+    private static let isoFmtFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     private static func parseDate(_ value: Any?) -> Date? {
         if let number = value as? Double {
             return Date(timeIntervalSince1970: number < 20_000_000_000 ? number : number / 1000)
@@ -254,10 +262,8 @@ enum KimiUsageParser {
             if let epoch = Double(text) {
                 return Date(timeIntervalSince1970: epoch < 20_000_000_000 ? epoch : epoch / 1000)
             }
-            let iso = ISO8601DateFormatter()
-            if let date = iso.date(from: text) { return date }
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return iso.date(from: text)
+            if let date = Self.isoFmt.date(from: text) { return date }
+            return Self.isoFmtFrac.date(from: text)
         }
         return nil
     }

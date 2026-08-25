@@ -95,11 +95,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @MainActor
     private func observeAPIService() {
         registry.sources.forEach { source in
+            let sourceID = source.sourceID
             source.onStateChange = { [weak self] in
-                self?.syncStatusItems()
+                self?.handleSourceStateChange(sourceID)
             }
         }
         syncStatusItems()
+    }
+
+    /// 单源状态变化的增量处理（B3 优化）：内容变化时只重渲染该源的状态栏项，
+    /// 避免每次通知都把全部可见项全量重位图渲染一遍；
+    /// 结构变化（数据出现/消失导致项需创建/删除）时回退全量同步。
+    /// 面板内容的实时同步由全局定时器 tick 的 rebuildMenuIfOpen 承担，与状态栏解耦。
+    private func handleSourceStateChange(_ sourceID: String) {
+        guard !isShuttingDown else { return }
+        guard let source = registry.source(withID: sourceID) else {
+            syncStatusItems()
+            return
+        }
+        let settings = SettingsManager.shared
+        let shouldBeVisible = settings.statusBarEnabled(for: sourceID) && statusContentAvailable(for: source)
+        let exists = statusItems[sourceID] != nil
+        guard shouldBeVisible == exists else {
+            syncStatusItems()
+            return
+        }
+        guard shouldBeVisible,
+              let view = statusBarViews[sourceID],
+              let item = statusItems[sourceID],
+              let button = item.button else { return }
+        // 防御性重绑（与 syncStatusItems 同策略，杜绝弱引用失效导致的串扰）
+        rebindStatusBarView(view, to: source)
+        renderStatusBarView(view, into: item, button: button)
     }
 
     // MARK: - 状态栏项（每源一项，按设置开关动态管理）

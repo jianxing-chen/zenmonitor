@@ -418,8 +418,10 @@ struct DeepSeekSourceCard: View {
                         DeepSeekAPIService.shared.invalidateForMissingKey()
                     } else {
                         settings.deepseekAPIKey = trimmed
-                        UserDefaults.standard.removeObject(forKey: "deepseek_cached_balance")
-                        UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
+                        // 更换 Key 后先清空内存与缓存，再立即拉取新数据（B2 修复：
+                        // 此前保存后既不拉取也不清内存，旧 Key 余额要等下一个自动 tick 才替换）
+                        DeepSeekAPIService.shared.invalidateForMissingKey()
+                        Task { await DeepSeekAPIService.shared.refresh(force: true) }
                     }
                     flashSavedBadge()
                 } label: {
@@ -511,8 +513,8 @@ struct KimiSourceCard: View {
                         KimiCodeAPIService.shared.invalidateForMissingKey()
                     } else {
                         settings.kimiAPIKey = trimmed
-                        UserDefaults.standard.removeObject(forKey: "kimi_cached_usages")
-                        UserDefaults.standard.removeObject(forKey: "kimi_cached_updated")
+                        // 更换 Key 后先清空内存与缓存再拉取，避免新 Key 失败时残留旧 Key 数据（B2 修复）
+                        KimiCodeAPIService.shared.invalidateForMissingKey()
                         // 保存后立即拉取一次，便于下次打开菜单即有数据
                         Task { await KimiCodeAPIService.shared.refresh() }
                     }
@@ -605,13 +607,11 @@ struct ZhipuSourceCard: View {
                 .fixedSize()
                 .onChange(of: region) { _, newValue in
                     settings.zhipuRegion = newValue
-                    // 旧平台的缓存语义不同，立即清除避免启动时短暂显示错误数据
-                    UserDefaults.standard.removeObject(forKey: "zhipu_cached_usages")
-                    UserDefaults.standard.removeObject(forKey: "zhipu_cached_updated")
+                    // 切换平台：立即清空内存数据与旧平台缓存（旧平台配额对新平台无意义），
+                    // 避免新平台拉取失败时面板残留跨平台数据（B5 修复）
+                    ZhipuAPIService.shared.invalidateForMissingKey()
                     if settings.zhipuAPIKey?.isEmpty == false {
                         Task { await ZhipuAPIService.shared.refresh() }
-                    } else {
-                        ZhipuAPIService.shared.invalidateForMissingKey()
                     }
                 }
 
@@ -631,8 +631,8 @@ struct ZhipuSourceCard: View {
                         ZhipuAPIService.shared.invalidateForMissingKey()
                     } else {
                         settings.zhipuAPIKey = trimmed
-                        UserDefaults.standard.removeObject(forKey: "zhipu_cached_usages")
-                        UserDefaults.standard.removeObject(forKey: "zhipu_cached_updated")
+                        // 更换 Key 后先清空内存与缓存再拉取，避免新 Key 失败时残留旧 Key 数据（B2 修复）
+                        ZhipuAPIService.shared.invalidateForMissingKey()
                         // 首次配置 Key 时自动开启状态栏显示（与火山方舟一致：
                         // 配置即意味着期望看到监控项）
                         if !settings.statusBarEnabled(for: "zhipu") {
@@ -754,8 +754,8 @@ struct VolcanoArkSourceCard: View {
                     } else if canSave {
                         settings.arkAccessKey = accessKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
                         settings.arkSecretKey = secretKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                        UserDefaults.standard.removeObject(forKey: "ark_cached_usages")
-                        UserDefaults.standard.removeObject(forKey: "ark_cached_updated")
+                        // 更换凭据后先清空内存与缓存再拉取，避免新凭据失败时残留旧数据（B2 修复）
+                        ArkAPIService.shared.invalidateForMissingCredentials()
                         // 首次配置凭据时自动开启状态栏显示（与其他源需手动开启的预期不同，
                         // AK/SK 配置门槛更高，配置即意味着期望看到监控项）
                         if !settings.statusBarEnabled(for: "ark") {

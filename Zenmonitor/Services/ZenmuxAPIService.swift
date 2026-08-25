@@ -49,6 +49,9 @@ final class ZenmuxAPIService: MonitoredSource {
     var subscriptionData: ZenmuxSubscriptionData? {
         didSet { notifyStateChange() }
     }
+    /// 缓存的快照：数据变化时构建一次（避免计算属性每次访问都重建），
+    /// 状态栏/面板高频读取时零分配（M1 优化）
+    private(set) var snapshot: SourceSnapshot?
     var lastError: String? {
         didSet { notifyStateChange() }
     }
@@ -93,6 +96,9 @@ final class ZenmuxAPIService: MonitoredSource {
             return
         }
         guard forceFetch else { return }
+        // Key 或域名变更：旧订阅数据对新凭据/新域名无意义，先清空内存与缓存再拉取，
+        // 避免拉取失败时面板残留旧数据（B2 修复，与 Tavily 模式对齐）
+        clearCachedSnapshotState()
         // 立即拉取绕过暂停（与原行为一致），不改变暂停状态
         Task { [weak self] in
             await self?.fetchSubscription(force: true, bypassPause: true)
@@ -135,7 +141,8 @@ final class ZenmuxAPIService: MonitoredSource {
         if isRefreshing { return }
 
         isRefreshing = true
-        lastError = nil
+        // 错误不在此处清空：失败时保留旧错误供面板占位展示，
+        // 仅成功后清空，避免持续失败源在刷新期间错误占位闪烁（B8 修复）
 
         defer {
             isRefreshing = false
@@ -165,6 +172,8 @@ final class ZenmuxAPIService: MonitoredSource {
                 subscriptionData = subData
                 let refreshedAt = Date()
                 lastUpdated = refreshedAt
+                lastError = nil
+                snapshot = .quota(makeQuotaSnapshot(from: subData))
                 SettingsManager.shared.cachedSubscriptionData = subData
                 SettingsManager.shared.cachedLastUpdated = refreshedAt
             } else {
@@ -181,8 +190,10 @@ final class ZenmuxAPIService: MonitoredSource {
     }
 
     private func clearForMissingAPIKey() {
-        // 未配置 Key 时静默置空（与其他五源一致）：下拉面板不显示占位，
-        // 仅「已配置但拉取失败」才透传错误；配置引导由设置面板承担
+        // 未配置 Key 时静默置空（与其他源一致）：下拉面板不显示占位，
+        // 仅「已配置但拉取失败」才透传错误；配置引导由设置面板承担。
+        // 已处于干净态时直接返回，避免自动定时器每 tick 重复触发重渲染（B3 修复）
+        guard subscriptionData != nil || lastError != nil || lastUpdated != nil || snapshot != nil else { return }
         lastError = nil
         clearCachedSnapshotState()
     }
@@ -196,6 +207,7 @@ final class ZenmuxAPIService: MonitoredSource {
     private func clearCachedSnapshotState() {
         lastUpdated = nil
         subscriptionData = nil
+        snapshot = nil
         SettingsManager.shared.clearCachedSubscriptionSnapshot()
     }
 
@@ -222,6 +234,7 @@ final class ZenmuxAPIService: MonitoredSource {
 
         subscriptionData = cachedData
         lastUpdated = cachedAt
+        snapshot = .quota(makeQuotaSnapshot(from: cachedData))
     }
 
     // MARK: - MonitoredSource 协议实现
@@ -231,11 +244,6 @@ final class ZenmuxAPIService: MonitoredSource {
     var displayName: String { "Zenmux" }
 
     var logoImageName: String? { nil }  // 使用 App 图标，无需单独资产
-
-    var snapshot: SourceSnapshot? {
-        guard let data = subscriptionData else { return nil }
-        return .quota(makeQuotaSnapshot(from: data))
-    }
 
     /// MonitoredSource 协议要求的统一刷新入口
     /// - Parameter force: true = 手动触发（面板打开/刷新按钮/保存 Key），绕过暂停；
@@ -324,10 +332,15 @@ final class ZenmuxAPIService: MonitoredSource {
 
     private func makeExpiryText(_ iso: String) -> String? {
         guard let date = iso.iso8601Date else { return nil }
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MM/dd"
-        return "到期 \(fmt.string(from: date))"
+        return "到期 \(Self.expiryFmt.string(from: date))"
     }
+
+    /// 到期日期格式化器（M2 优化：DateFormatter 初始化昂贵，提升为静态单例）
+    private static let expiryFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd"
+        return f
+    }()
 
     /// 映射服务端真实账户状态：monitored/abusive 属用量观察态（水位由进度条颜色表达），
     /// 归入正常；仅真实封禁/暂停才标红
