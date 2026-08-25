@@ -50,10 +50,13 @@
 
 ### 方式一：下载预编译版本（推荐）
 
-1. 从 [Releases](https://github.com/jianxing-chen/zenmonitor/releases) 下载最新版 `Zenmonitor-vX.X.zip`
-2. 解压后将 `Zenmonitor.app` 拖入 `/Applications`
-3. 首次打开：**右键 App → 打开**（Ad Hoc 签名，需绕过 Gatekeeper 提示）
-4. 可在 系统设置 → 通用 → 登录项 中设为开机自启（应用内设置亦提供开关）
+1. 从 [Releases](https://github.com/jianxing-chen/zenmonitor/releases) 下载最新版 `Zenmonitor-vX.X.X.zip`
+2. 解压并将 `Zenmonitor.app` 拖入「应用程序」(`/Applications`)
+3. 终端执行以下命令移除 quarantine 标记（Ad Hoc 签名，避免 Gatekeeper 拦截）：
+   ```bash
+   xattr -d com.apple.quarantine /Applications/Zenmonitor.app
+   ```
+4. 打开 Zenmonitor 即可使用；可在 系统设置 → 通用 → 登录项 中设为开机自启（应用内设置亦提供开关）
 
 ### 方式二：自行编译
 

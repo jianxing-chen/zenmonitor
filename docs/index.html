@@ -7,39 +7,38 @@
 <meta name="description" content="Zenmonitor：把七家 AI 服务的配额与余额实时放进 macOS 菜单栏。开源、免费、本地优先。">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f5f5f7;
-    --bg-elevated: rgba(255, 255, 255, 0.72);
-    --card: rgba(255, 255, 255, 0.6);
-    --card-border: rgba(0, 0, 0, 0.08);
-    --text: #1d1d1f;
-    --text-secondary: #6e6e73;
-    --accent: #0071e3;
-    --accent-hover: #0077ed;
-    --green: #34c759;
-    --track: rgba(0, 0, 0, 0.08);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161617;
-      --bg-elevated: rgba(34, 34, 36, 0.72);
-      --card: rgba(44, 44, 46, 0.6);
-      --card-border: rgba(255, 255, 255, 0.1);
-      --text: #f5f5f7;
-      --text-secondary: #a1a1a6;
-      --accent: #2997ff;
-      --accent-hover: #4ba8ff;
-      --green: #30d158;
-      --track: rgba(255, 255, 255, 0.12);
-    }
+    --ink: #141414;
+    --paper: #F2EEE3;
+    --card: #FFFFFF;
+    --yellow: #FFD23F;
+    --pink: #FF5DA2;
+    --cyan: #3DD7E0;
+    --green: #5BE08A;
+    --blue: #4D8DFF;
+    --purple: #B07CF0;
+    --orange: #FF9F45;
+    --bd: 3px;
+    --shadow: 6px 6px 0 var(--ink);
+    --shadow-sm: 4px 4px 0 var(--ink);
+    --radius: 18px;
+    --mono: "Space Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "Space Grotesk", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
-    background: var(--bg);
-    color: var(--text);
+    font-family: var(--sans);
+    font-weight: 500;
+    background-color: var(--paper);
+    background-image: radial-gradient(rgba(20, 20, 20, 0.07) 1.2px, transparent 1.2px);
+    background-size: 22px 22px;
+    background-position: -11px -11px;
+    color: var(--ink);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
@@ -48,150 +47,217 @@
   /* ── 导航 ── */
   nav {
     position: sticky; top: 0; z-index: 100;
-    background: var(--bg-elevated);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    border-bottom: 1px solid var(--card-border);
+    background: var(--paper);
+    border-bottom: var(--bd) solid var(--ink);
   }
-  nav .container { display: flex; align-items: center; justify-content: space-between; height: 52px; }
-  .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
-  a.nav-brand { text-decoration: none; color: inherit; }  /* 品牌可点击回顶部，保持原样式 */
+  nav .container { display: flex; align-items: center; justify-content: space-between; height: 54px; }
+  .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+  a.nav-brand { text-decoration: none; color: var(--ink); }
   .nav-logo {
-    width: 26px; height: 26px; border-radius: 7px; overflow: hidden;
-    display: flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border: var(--bd) solid var(--ink); border-radius: 9px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; background: var(--yellow);
   }
   .nav-logo img { width: 100%; height: 100%; object-fit: cover; }
-  .nav-links { display: flex; gap: 22px; font-size: 14px; }
-  .nav-links a { color: var(--text-secondary); text-decoration: none; }
-  .nav-links a:hover { color: var(--text); }
+  .nav-links { display: flex; gap: 22px; font-size: 14px; font-weight: 700; }
+  .nav-links a { color: var(--ink); text-decoration: none; border-bottom: 3px solid transparent; padding-bottom: 2px; }
+  .nav-links a:hover { border-bottom-color: var(--ink); }
 
   /* ── Hero ── */
-  .hero { text-align: center; padding: 88px 0 56px; }
+  .hero { text-align: center; padding: 76px 0 40px; position: relative; }
+  .hero::before, .hero::after {
+    content: ""; position: absolute; background-repeat: no-repeat; background-size: contain;
+    pointer-events: none; z-index: 2;
+  }
+  .hero::before {
+    top: 52px; left: max(14px, calc(50% - 540px));
+    width: 56px; height: 56px;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%202l2.9%206.3%206.9.7-5.1%204.7%201.4%206.8L12%2017.8%205.9%2020.5l1.4-6.8L2.2%209l6.9-.7z'%20fill='%23FFD23F'%20stroke='%23141414'%20stroke-width='2'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .hero::after {
+    top: 320px; right: max(14px, calc(50% - 540px));
+    width: 66px; height: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2040%2020'%3E%3Cpath%20d='M2%2010%20q5%20-8%2010%200%20t10%200%20t10%200'%20fill='none'%20stroke='%23141414'%20stroke-width='2.5'%20stroke-linecap='round'/%3E%3C/svg%3E");
+  }
   .hero-badge {
     display: inline-flex; align-items: center; gap: 7px;
-    font-size: 13px; color: var(--text-secondary);
-    background: var(--card); border: 1px solid var(--card-border);
-    padding: 5px 14px; border-radius: 999px; margin-bottom: 24px;
+    font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink);
+    background: var(--card); border: var(--bd) solid var(--ink);
+    padding: 6px 14px; border-radius: 999px; margin-bottom: 26px; box-shadow: var(--shadow-sm);
   }
-  .hero-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .hero-badge .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); border: 2px solid var(--ink); }
   .hero h1 {
-    font-size: clamp(38px, 6vw, 60px); font-weight: 700;
+    font-size: clamp(40px, 6.5vw, 66px); font-weight: 700;
     letter-spacing: -0.02em; line-height: 1.12;
   }
   .hero h1 .gradient {
-    background: linear-gradient(90deg, #0a84ff, #5e5ce6, #bf5af2);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    display: inline-block;
+    background: var(--yellow); color: var(--ink);
+    padding: 0 0.12em; border: 2px solid var(--ink); border-radius: 10px;
+    box-shadow: 3px 3px 0 var(--ink);
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
   }
   .hero .tagline {
-    font-size: clamp(17px, 2.4vw, 21px); color: var(--text-secondary);
-    max-width: 620px; margin: 20px auto 0;
+    font-size: clamp(16px, 2.3vw, 20px); color: var(--ink); font-weight: 500;
+    max-width: 620px; margin: 22px auto 0;
   }
-  .hero-actions { display: flex; gap: 14px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
+  .hero-actions { display: flex; gap: 16px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
-    font-size: 16px; font-weight: 500; text-decoration: none;
-    padding: 12px 26px; border-radius: 999px;
-    transition: all 0.2s ease;
+    font-size: 16px; font-weight: 700; text-decoration: none;
+    padding: 13px 26px; border: var(--bd) solid var(--ink); border-radius: 12px;
+    background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
   }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-primary:hover { background: var(--accent-hover); transform: scale(1.02); }
-  .btn-secondary {
-    background: var(--card); color: var(--text);
-    border: 1px solid var(--card-border);
-  }
-  .btn-secondary:hover { background: var(--bg-elevated); }
-  .hero-note { font-size: 13px; color: var(--text-secondary); margin-top: 16px; }
+  .btn-primary { background: var(--yellow); }
+  .btn-secondary { background: var(--card); }
+  .btn:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow); }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
+  .hero-note { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink); margin-top: 18px; }
 
   /* ── 宣传图 ── */
-  .hero-image { margin: 48px auto 0; max-width: 860px; }
+  .hero-image { margin: 48px auto 0; max-width: 860px; position: relative; }
   .hero-image img {
-    width: 100%; border-radius: 18px; display: block;
-    border: 1px solid var(--card-border);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.12);
+    width: 100%; border: var(--bd) solid var(--ink); border-radius: 16px; display: block;
+    box-shadow: var(--shadow); background: var(--card);
   }
 
   /* ── 区块标题 ── */
-  section { padding: 72px 0; scroll-margin-top: 53px; }  /* 锚点跳转贴合粘性导航 */
-  .section-title { font-size: 32px; font-weight: 700; letter-spacing: -0.01em; text-align: center; }
-  .section-sub { color: var(--text-secondary); text-align: center; margin-top: 10px; font-size: 16px; }
+  section { padding: 72px 0; scroll-margin-top: 58px; border-top: var(--bd) solid var(--ink); }
+  .section-title {
+    display: block; width: fit-content; margin: 0 auto;
+    font-size: 30px; font-weight: 700; letter-spacing: -0.01em; text-align: center;
+    padding: 8px 20px; border: var(--bd) solid var(--ink); border-radius: 14px;
+    box-shadow: var(--shadow-sm); background: var(--yellow);
+  }
+  #sources .section-title { background: var(--cyan); }
+  #support .section-title { background: var(--pink); }
+  .section-sub {
+    display: block; width: fit-content; margin: 14px auto 0; text-align: center;
+    font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink);
+    background: var(--card); border: 2px solid var(--ink); border-radius: 999px; padding: 4px 14px;
+  }
 
-  /* ── 功能亮点（固定宽卡片 + 换行末行居中，避免奇数项尾行落单难看） ── */
-  .features { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 44px; }
+  /* ── 功能亮点 ── */
+  .features {
+    margin-top: 40px;
+    background: var(--card); border: var(--bd) solid var(--ink);
+    border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+  }
   .feature {
-    flex: 0 1 300px;
-    background: var(--card); border: 1px solid var(--card-border);
-    border-radius: 16px; padding: 24px;
-    transition: transform 0.2s ease;
+    display: grid; grid-template-columns: auto 1fr; column-gap: 16px; align-items: start;
+    padding: 20px 24px; border-top: 2px solid var(--ink);
+    transition: background 0.15s ease;
   }
-  .feature:hover { transform: translateY(-3px); }
+  .feature:first-child { border-top: none; }
+  .feature:hover { background: var(--paper); }
   .feature .icon {
-    width: 40px; height: 40px; border-radius: 11px; margin-bottom: 14px;
-    display: flex; align-items: center; justify-content: center; font-size: 19px;
-    background: var(--track);
+    grid-row: 1 / span 2;
+    width: 44px; height: 44px; border: 2.5px solid var(--ink); border-radius: 11px;
+    display: flex; align-items: center; justify-content: center; background: var(--yellow);
   }
-  .feature h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
-  .feature p { font-size: 14px; color: var(--text-secondary); }
+  .feature .icon svg { width: 25px; height: 25px; display: block; }
+  .feature:nth-child(1) .icon { background: var(--yellow); }
+  .feature:nth-child(2) .icon { background: var(--cyan); }
+  .feature:nth-child(3) .icon { background: var(--pink); }
+  .feature:nth-child(4) .icon { background: var(--green); }
+  .feature:nth-child(5) .icon { background: var(--orange); }
+  .feature:nth-child(6) .icon { background: var(--purple); }
+  .feature:nth-child(7) .icon { background: var(--blue); }
+  .feature h3 { grid-column: 2; font-size: 17px; font-weight: 700; }
+  .feature p { grid-column: 2; font-size: 14px; color: var(--ink); font-weight: 500; margin-top: 4px; }
 
-  /* ── 支持的源（固定宽卡片 + 换行末行居中，7 源 = 3+3+1 末行居中） ── */
-  .sources { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 44px; }
+  /* ── 支持的源 ── */
+  .sources {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 16px; margin-top: 40px;
+  }
   .source {
-    flex: 0 1 290px;
-    background: var(--card); border: 1px solid var(--card-border);
-    border-radius: 14px; padding: 18px 20px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 14px;
+    background: var(--card); border: var(--bd) solid var(--ink);
+    border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow-sm);
   }
-  .source .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .source .head { display: flex; align-items: center; gap: 10px; }
   .source .glyph {
-    width: 30px; height: 30px; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border: 2px solid var(--ink); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; background: var(--card); flex: 0 0 auto;
   }
-  .source .glyph img {
-    width: 100%; height: 100%; object-fit: contain; padding: 4px;
-    background: rgba(255, 255, 255, 0.92); border-radius: 8px;
-    border: 1px solid var(--card-border);
-  }
-  .source h4 { font-size: 15px; font-weight: 600; }
+  .source .glyph img { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
+  .source h4 { font-size: 15px; font-weight: 700; }
   .source .tag {
-    font-size: 11px; color: var(--text-secondary);
-    border: 1px solid var(--card-border); border-radius: 999px; padding: 1px 9px; margin-left: auto;
+    font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--ink);
+    border: 2px solid var(--ink); border-radius: 999px; padding: 1px 9px; margin-left: auto;
+    background: var(--yellow);
   }
-  .source p { font-size: 13px; color: var(--text-secondary); }
-  .bar { height: 6px; border-radius: 3px; background: var(--track); margin-top: 12px; overflow: hidden; }
-  .bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #0a84ff, #5e5ce6); }
+  .bar { height: 10px; border: 2px solid var(--ink); border-radius: 6px; background: var(--paper); margin-top: auto; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--blue); }
+  .source:nth-child(1) .bar i { background: var(--blue); }
+  .source:nth-child(2) .bar i { background: var(--green); }
+  .source:nth-child(3) .bar i { background: var(--pink); }
+  .source:nth-child(4) .bar i { background: var(--purple); }
+  .source:nth-child(5) .bar i { background: var(--orange); }
+  .source:nth-child(6) .bar i { background: var(--cyan); }
+  .source:nth-child(7) .bar i { background: var(--yellow); }
+
+  .source-more { align-items: center; text-align: center; border-style: dashed; justify-content: center; }
+  .source-more .head { justify-content: center; }
+  .source-more .glyph { background: var(--purple); }
+  .source-more .glyph svg { width: 24px; height: 24px; }
+  .source-more .more-note { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); }
 
   /* ── 下载 ── */
   .download {
-    text-align: center;
-    background: var(--card); border: 1px solid var(--card-border);
-    border-radius: 22px; padding: 56px 24px;
+    position: relative; text-align: center;
+    background: var(--yellow); border: var(--bd) solid var(--ink);
+    border-radius: 24px; padding: 56px 24px; box-shadow: var(--shadow);
   }
-  .download h2 { font-size: 30px; font-weight: 700; }
-  .download p { color: var(--text-secondary); margin: 12px auto 28px; max-width: 520px; }
-  .download .steps { font-size: 13px; color: var(--text-secondary); margin-top: 20px; }
+  .download::after {
+    content: ""; position: absolute; top: -20px; right: 26px;
+    width: 46px; height: 46px; background-repeat: no-repeat; background-size: contain;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%202l2.9%206.3%206.9.7-5.1%204.7%201.4%206.8L12%2017.8%205.9%2020.5l1.4-6.8L2.2%209l6.9-.7z'%20fill='%23FFD23F'%20stroke='%23141414'%20stroke-width='2'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .download h2 { font-size: 32px; font-weight: 700; }
+  .download p { color: var(--ink); font-weight: 500; margin: 12px auto 28px; max-width: 520px; }
+  .download .steps {
+    font-family: var(--mono); font-size: 13px; font-weight: 700; margin-top: 22px;
+    counter-reset: step; text-align: left; display: inline-block;
+  }
+  .download .steps li { list-style: none; margin: 9px 0; }
+  .download .steps li::before {
+    counter-increment: step; content: counter(step);
+    display: inline-block; min-width: 22px; margin-right: 9px;
+    background: var(--card); border: 2px solid var(--ink); border-radius: 6px;
+    text-align: center;
+  }
+  .download .steps code {
+    font-family: var(--mono); background: var(--paper); border: 2px solid var(--ink);
+    border-radius: 5px; padding: 0 5px; font-size: 12px;
+  }
 
   /* ── 支持项目（赞赏码） ── */
   .qrcards { display: flex; gap: 20px; justify-content: center; margin-top: 40px; flex-wrap: wrap; }
   .qrcard {
-    background: var(--card); border: 1px solid var(--card-border);
+    background: var(--card); border: var(--bd) solid var(--ink);
     border-radius: 16px; padding: 18px;
     display: flex; flex-direction: column; align-items: center; gap: 12px;
-    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s ease, box-shadow 0.15s ease; min-width: 232px;
   }
-  .qrcard:hover { transform: translateY(-3px); }
-  .qrcard img { height: 210px; width: auto; border-radius: 10px; background: #fff; }
-  .qrcard span { font-size: 13px; color: var(--text-secondary); }
-  .qrcard { min-width: 232px; }  /* 两张卡片宽度一致（码图宽高比不同，固定高度下补齐） */
+  .qrcard:hover { transform: translate(-3px, -3px); box-shadow: var(--shadow); }
+  .qrcard img { height: 210px; width: auto; border-radius: 10px; background: #fff; border: 2px solid var(--ink); }
+  .qrcard span { font-family: var(--mono); font-size: 13px; font-weight: 700; }
 
   /* ── 页脚 ── */
   footer {
-    border-top: 1px solid var(--card-border);
-    padding: 36px 0 48px; font-size: 13px; color: var(--text-secondary);
+    border-top: var(--bd) solid var(--ink);
+    padding: 36px 0 48px; font-size: 13px; font-weight: 700;
   }
   footer .container { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-  footer a { color: var(--text-secondary); text-decoration: none; }
-  footer a:hover { color: var(--text); }
+  footer a { color: var(--ink); text-decoration: none; border-bottom: 2px solid transparent; }
+  footer a:hover { border-bottom-color: var(--ink); }
 
-  @media (max-width: 640px) {
-    .hero { padding: 56px 0 40px; }
+  @media (max-width: 720px) {
+    .hero::before, .hero::after { display: none; }
+    .hero { padding: 52px 0 36px; }
     .nav-links { display: none; }
     section { padding: 52px 0; }
   }
@@ -217,7 +283,7 @@
     <h1>AI 用量，<span class="gradient">常驻菜单栏</span></h1>
     <p class="tagline">Zenmonitor 把七家 AI 服务的配额、余额与消耗实时放进 macOS 菜单栏——一眼掌握，不占 Dock、不占窗口。</p>
     <div class="hero-actions">
-      <a class="btn btn-primary" href="https://github.com/jianxing-chen/zenmonitor/releases/latest" target="_blank">⬇ 免费下载</a>
+      <a class="btn btn-primary" href="https://github.com/jianxing-chen/zenmonitor/releases/latest" target="_blank">免费下载 ↓</a>
       <a class="btn btn-secondary" href="https://github.com/jianxing-chen/zenmonitor" target="_blank">查看源码 →</a>
     </div>
     <p class="hero-note">macOS 15.0+ · Apple Silicon / Intel · MIT 协议</p>
@@ -230,42 +296,42 @@
 <section id="features">
   <div class="container">
     <h2 class="section-title">核心功能</h2>
-    <p class="section-sub">为重度 AI 用户打造的用量看板</p>
+    <p class="section-sub">菜单栏里的用量看板</p>
     <div class="features">
       <div class="feature">
-        <div class="icon">📊</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 20h16" stroke="#141414" stroke-width="2.4" stroke-linecap="round"/><rect x="5" y="11" width="3.2" height="9" fill="#141414"/><rect x="10.4" y="6" width="3.2" height="14" fill="#141414"/><rect x="15.8" y="13" width="3.2" height="7" fill="#141414"/></svg></div>
         <h3>七源统一监控</h3>
-        <p>Zenmux / DeepSeek / Kimi Code / 智谱 GLM / 火山方舟 / Tavily / OpenCode Go，配额与余额两种形态统一抽象，架构可随时扩展新源。</p>
+        <p>七家 AI 服务统一监控，配额与余额自动归一，随时可加新源。</p>
       </div>
       <div class="feature">
-        <div class="icon">🎛️</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 16h16" stroke="#141414" stroke-width="2.4" stroke-linecap="round"/><circle cx="14" cy="8" r="3" fill="#141414"/><circle cx="7" cy="16" r="3" fill="#141414"/></svg></div>
         <h3>每源独立状态栏项</h3>
-        <p>进度条、余额文本、品牌徽章三种形态，逐源开关；多显示器深浅外观自动适配。</p>
+        <p>每个源独立状态栏项，进度条、余额、徽章三种形态，逐源开关，深浅外观自动适配。</p>
       </div>
       <div class="feature">
-        <div class="icon">⏱️</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#141414" stroke-width="2.4"/><path d="M12 7v5l3.5 2" stroke="#141414" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
         <h3>智能刷新调度</h3>
-        <p>全局间隔（30s~5m）+ 每源独立 ×1~×10 倍率，精细控制请求频率；限流端点内置客户端节流。</p>
+        <p>全局间隔 30s–5m，每源可加 ×1–×10 倍率；限流端点自动节流。</p>
       </div>
       <div class="feature">
-        <div class="icon">🔮</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#141414" stroke-width="2.4"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="#141414" stroke-width="2.4"/><circle cx="12" cy="12" r="1.4" fill="#141414"/></svg></div>
         <h3>7 天用量预测</h3>
-        <p>进度条叠加预测阴影——「上游窗口用满后本窗口将达到的位置」，提前预警而非事后补救。</p>
+        <p>进度条叠加 7 天预测线，配额将满前提前预警。</p>
       </div>
       <div class="feature">
-        <div class="icon">📍</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 2c-4 0-7 3-7 7 0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z" fill="none" stroke="#141414" stroke-width="2.4" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.6" fill="#141414"/></svg></div>
         <h3>时间进度标记</h3>
-        <p>进度条下方的三角形标记当前窗口的时间进度——用量低于标记即消耗慢于时间流逝，节奏是否健康一眼即知。</p>
+        <p>进度条下方三角标记当前时间进度，消耗是否过快一眼可见。</p>
       </div>
       <div class="feature">
-        <div class="icon">🔒</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="#141414" stroke-width="2.4"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="#141414" stroke-width="2.4"/><circle cx="12" cy="15.5" r="1.6" fill="#141414"/></svg></div>
         <h3>本地优先</h3>
-        <p>API Key 与全部配置仅存本机，不上传任何服务器；纯菜单栏运行，空闲内存约 20MB。</p>
+        <p>密钥与配置只存本机，不上传服务器；纯菜单栏运行，空闲内存约 20MB。</p>
       </div>
       <div class="feature">
-        <div class="icon">🗂️</div>
+        <div class="icon"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z" fill="none" stroke="#141414" stroke-width="2.4" stroke-linejoin="round"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4" fill="none" stroke="#141414" stroke-width="2.4" stroke-linejoin="round"/></svg></div>
         <h3>随手定制</h3>
-        <p>设置面板拖动源卡片即可调整区块顺序，即时生效；详情区块一键折叠展开。</p>
+        <p>设置里拖动卡片即可排序，详情区块一键折叠。</p>
       </div>
     </div>
   </div>
@@ -274,42 +340,38 @@
 <section id="sources">
   <div class="container">
     <h2 class="section-title">支持的监控源</h2>
-    <p class="section-sub">七家平台，一套体验</p>
     <div class="sources">
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/zenmux.png" alt="Zenmux"></span><h4>Zenmux</h4><span class="tag">配额型</span></div>
-        <p>5H / 7D 双窗口配额 · 月度上限与汇率 · 双域名切换 · 详情可折叠</p>
         <div class="bar"><i style="width:21%"></i></div>
       </div>
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/deepseek.png" alt="DeepSeek"></span><h4>DeepSeek</h4><span class="tag">余额型</span></div>
-        <p>账户余额实时展示 · 本地整点采样差值推算今日用量，充值自动重置基线</p>
         <div class="bar"><i style="width:64%"></i></div>
       </div>
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/kimi.png" alt="Kimi Code"></span><h4>Kimi Code</h4><span class="tag">配额型</span></div>
-        <p>5 小时滚动频控 + 7 天周额度双窗口 · 状态四档对应真实频控</p>
         <div class="bar"><i style="width:21%"></i></div>
       </div>
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/zhipu.png" alt="智谱 GLM"></span><h4>智谱 GLM</h4><span class="tag">配额型</span></div>
-        <p>5H + 周限额 · 国内版（bigmodel.cn）/ 国际版（z.ai）一键切换</p>
         <div class="bar"><i style="width:31%"></i></div>
       </div>
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/ark.png" alt="火山方舟"></span><h4>火山方舟</h4><span class="tag">配额型</span></div>
-        <p>Agent Plan AFP 配额（5H / 7D / 1M）· AK/SK V4 签名认证</p>
         <div class="bar"><i style="width:87%"></i></div>
       </div>
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/tavily.png" alt="Tavily"></span><h4>Tavily</h4><span class="tag">配额型</span></div>
-        <p>月度 Credits 配额 + 端点消耗明细 · 客户端节流适配端点限流</p>
         <div class="bar"><i style="width:6%"></i></div>
       </div>
       <div class="source">
         <div class="head"><span class="glyph"><img src="assets/logos/opencode.png" alt="OpenCode Go"></span><h4>OpenCode Go</h4><span class="tag">配额型</span></div>
-        <p>5H / 7D / 1M 三窗口配额 + 精确重置时间 · 官方 /usage 端点（与推理同 Key）</p>
         <div class="bar"><i style="width:14%"></i></div>
+      </div>
+      <div class="source source-more">
+        <div class="head"><span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="#141414" stroke-width="3" stroke-linecap="round"/></svg></span><h4>未完待续</h4></div>
+        <span class="more-note">更多 AI 服务，持续接入中</span>
       </div>
     </div>
   </div>
@@ -324,7 +386,12 @@
         <a class="btn btn-primary" href="https://github.com/jianxing-chen/zenmonitor/releases/latest" target="_blank">下载最新版</a>
         <a class="btn btn-secondary" href="https://github.com/jianxing-chen/zenmonitor#-安装" target="_blank">安装指引</a>
       </div>
-      <p class="steps">首次打开：右键 Zenmonitor.app → 打开（绕过 Gatekeeper 提示）</p>
+      <ol class="steps">
+        <li>解压下载的 <code>Zenmonitor-vX.X.X.zip</code></li>
+        <li>把 <code>Zenmonitor.app</code> 拖进「应用程序」</li>
+        <li>终端执行 <code>xattr -d com.apple.quarantine /Applications/Zenmonitor.app</code></li>
+        <li>打开 Zenmonitor 即可使用</li>
+      </ol>
     </div>
   </div>
 </section>
@@ -350,7 +417,7 @@
   <div class="container">
     <span>Zenmonitor · <a href="https://github.com/jianxing-chen/zenmonitor/blob/main/LICENSE" target="_blank">MIT License</a> © jianxing-chen</span>
     <span>
-      <a href="#support">☕ 赞助支持</a> ·
+      <a href="#support">赞助支持</a> ·
       <a href="https://github.com/jianxing-chen/zenmonitor" target="_blank">GitHub</a> ·
       <a href="https://github.com/jianxing-chen/zenmonitor/releases" target="_blank">Releases</a> ·
       <a href="https://github.com/jianxing-chen/zenmonitor/issues" target="_blank">Issues</a>
