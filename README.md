@@ -1,7 +1,7 @@
 # Zenmonitor
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/platform-macOS%2015.0%2B-blue.svg)](https://www.apple.com/macos/)
+[![Platform](https://img.shields.io/badge/platform-macOS%2015.7%2B-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org/)
 [![GitHub release](https://img.shields.io/github/v/release/jianxing-chen/zenmonitor)](https://github.com/jianxing-chen/zenmonitor/releases)
 [![Website](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-%E5%9C%A8%E7%BA%BF%E8%AE%BF%E9%97%AE-0071e3)](https://jianxing-chen.github.io/zenmonitor/)
@@ -109,7 +109,7 @@ SourceRegistry 注册中心（八源注册 / 全局定时器 / 每源倍率调�
 
 ## 📋 系统要求与技术栈
 
-- **系统**：macOS 15.0+（Sonoma/Sequoia），Apple Silicon / Intel 通用
+- **系统**：macOS 15.7+（Sequoia），Apple Silicon / Intel 通用
 - **技术栈**：Swift 5.9+，SwiftUI（设置面板/下拉面板）+ AppKit（NSStatusItem 状态栏、窗口管理）混合架构；CryptoKit（火山 V4 签名）；零第三方依赖
 
 ## 📊 资源占用
