@@ -51,6 +51,35 @@ enum ZhipuRegion: String, CaseIterable, Codable {
     }
 }
 
+/// StepFun 开放平台所属站点。国内（platform.stepfun.com）与海外
+/// （platform.stepfun.ai）为独立账号与订阅体系，API Key 互不通用；
+/// 两站的 /step_plan/v1/usage 路径与响应结构一致，仅域名不同。
+enum StepFunRegion: String, CaseIterable, Codable {
+    case domestic = "domestic"
+    case international = "international"
+
+    /// 用量端点 host
+    var apiHost: String {
+        switch self {
+        case .domestic:       return "https://api.stepfun.com"
+        case .international:  return "https://api.stepfun.ai"
+        }
+    }
+
+    /// Step Plan 额度端点完整 URL
+    var usageURL: URL {
+        URL(string: apiHost + "/step_plan/v1/usage")!
+    }
+
+    /// 对应站点的 Step Plan 订阅页（用于设置中的外链）
+    var consoleURL: URL {
+        switch self {
+        case .domestic:       return URL(string: "https://platform.stepfun.com/step-plan")!
+        case .international:  return URL(string: "https://platform.stepfun.ai/step-plan")!
+        }
+    }
+}
+
 final class SettingsManager {
     static let shared = SettingsManager()
 
@@ -70,6 +99,8 @@ final class SettingsManager {
         static let arkSecretKey = "ark_secret_key"
         static let tavilyAPIKey = "tavily_api_key"
         static let opencodeAPIKey = "opencode_api_key"
+        static let stepfunAPIKey = "stepfun_api_key"
+        static let stepfunRegion = "stepfun_region"
         static let statusBarPrefix = "statusbar_enabled_"
         static let menuOrder = "menu_source_order"
         static let apiDomain = "api_domain"
@@ -179,6 +210,28 @@ final class SettingsManager {
     var opencodeAPIKey: String? {
         get { defaults.string(forKey: Keys.opencodeAPIKey) }
         set { defaults.set(newValue, forKey: Keys.opencodeAPIKey) }
+    }
+
+    // MARK: - StepFun Step Plan
+
+    /// Step Plan API Key（与推理接口共用同一把 Key），用于查询
+    /// /step_plan/v1/usage 的套餐额度。与其他源 Key 相互独立。
+    var stepfunAPIKey: String? {
+        get { defaults.string(forKey: Keys.stepfunAPIKey) }
+        set { defaults.set(newValue, forKey: Keys.stepfunAPIKey) }
+    }
+
+    /// StepFun 站点选择，默认国内站。切换后需使用对应站点的 Key（两者不通用），
+    /// 服务层下次刷新即走新域名。
+    var stepfunRegion: StepFunRegion {
+        get {
+            if let raw = defaults.string(forKey: Keys.stepfunRegion),
+               let value = StepFunRegion(rawValue: raw) {
+                return value
+            }
+            return .domestic
+        }
+        set { defaults.set(newValue.rawValue, forKey: Keys.stepfunRegion) }
     }
 
     // MARK: - 每源刷新倍率

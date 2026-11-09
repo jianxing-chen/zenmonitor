@@ -59,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 zenmux.handleAppLaunch()
             }
         }
-        // 启动全局自动刷新定时器：四源统一跟随设置面板「自动刷新间隔」
+        // 启动全局自动刷新定时器：各源统一跟随设置面板「自动刷新间隔」
         registry.startAutoRefresh()
         // 自动刷新 tick 完成后，面板若仍打开则同步重建内容（消除打开期间数据不更新的盲区）
         registry.onAutoRefreshTick = { [weak self] in
@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             _ = StatusBarView.arkBadgeLogo
             _ = StatusBarView.tavilyBadgeLogo
             _ = StatusBarView.openCodeBadgeLogo
+            _ = StatusBarView.stepFunBadgeLogo
             _ = PanelLogo.zenmux
         }
     }
@@ -334,6 +335,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 view.showsPercentText = false
             } else if source.sourceID == "opencode" {
                 view.badgeImage = StatusBarView.openCodeBadgeLogo
+                view.showsSourceBadge = true
+                view.showsPercentText = false
+            } else if source.sourceID == "stepfun" {
+                view.badgeImage = StatusBarView.stepFunBadgeLogo
                 view.showsSourceBadge = true
                 view.showsPercentText = false
             }
@@ -1271,6 +1276,16 @@ final class StatusBarView: NSView, StatusItemRenderable {
         return sparkleFallbackImage
     }()
 
+    /// StepFun 徽章 Logo 缓存：StepFunLogo 单色化（去底 + 置黑），
+    /// 处理失败时回退四角星形矢量图
+    static let stepFunBadgeLogo: NSImage? = {
+        if let icon = NSImage(named: "StepFunLogo"),
+           let mono = makeMonochromeSilhouette(icon) {
+            return mono
+        }
+        return sparkleFallbackImage
+    }()
+
     /// Kimi 徽章白色版已废弃（模板 tint 方案，同 appLogoInverted）
 
     /// 通用单色化：降采样 → 区域生长去底 → 亮度兜底清残留 → 置纯黑 → 包围盒裁剪。
@@ -1511,6 +1526,7 @@ struct SourceQuotaSection: View {
         case "tavily":        return 22
         case "zhipu", "ark":  return 20
         case "kimi":          return 18
+        case "stepfun":       return 18
         default:              return 20
         }
     }

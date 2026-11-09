@@ -96,6 +96,8 @@ struct SettingsView: View {
             TavilySourceCard()
         case "opencode":
             OpenCodeSourceCard()
+        case "stepfun":
+            StepFunSourceCard()
         default:
             // 未来新源的通用卡片
             GenericSourceCard(source: source)
@@ -121,7 +123,7 @@ struct SettingsView: View {
                 .frame(width: 160)
                 .onChange(of: refreshInterval) { _, newValue in
                     settings.refreshInterval = newValue
-                    // 重启全局自动刷新定时器，新间隔立即生效（四源统一跟随）
+                    // 重启全局自动刷新定时器，新间隔立即生效（各源统一跟随）
                     registry.startAutoRefresh()
                 }
             }
@@ -1142,6 +1144,139 @@ struct OpenCodeSourceCard: View {
                                icon: "checkmark.circle.fill", tint: .green)
         }
         let configured = settings.opencodeAPIKey?.isEmpty == false
+        return StatusBadge(title: configured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - StepFun Step Plan 卡片
+
+/// StepFun Step Plan 配置卡：API Key + 站点选择。
+///
+/// 时间进度三角标记无需配置：端点返回月池重置时间，服务层按自然月倒推起点
+/// （见 StepFunAPIService.monthlyPeriod）。
+private struct StepFunSourceCard: View {
+    @State private var apiKeyInput: String
+    @State private var showKeySaved = false
+    /// 站点选择（国内/海外）：两站账号独立、Key 不通用，切换后需换用对应站点的 Key
+    @State private var region: StepFunRegion
+
+    private let settings = SettingsManager.shared
+
+    init() {
+        _apiKeyInput = State(initialValue: SettingsManager.shared.stepfunAPIKey ?? "")
+        _region = State(initialValue: SettingsManager.shared.stepfunRegion)
+    }
+
+    /// 输入框去空白后是否为空（空 = 删除 Key 操作）
+    private var keyInputIsEmpty: Bool {
+        apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题 + 刷新倍率选择器（纵向构图，尺寸与其他源一致）
+            HStack(spacing: 10) {
+                Image("StepFunLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                Text("StepFun Step Plan")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                // 站点切换（与智谱平台切换同模式）：路径两站一致，仅 host 不同；
+                // 切换后旧站缓存失效，已配 Key 时立即重新拉取
+                Picker("", selection: $region) {
+                    Text("国内站").tag(StepFunRegion.domestic)
+                    Text("海外站").tag(StepFunRegion.international)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .onChange(of: region) { _, newValue in
+                    settings.stepfunRegion = newValue
+                    // 旧站点的额度数据对新站点无意义：先清空内存与缓存，
+                    // 再按新站点重新拉取，避免拉取失败时面板残留跨站数据
+                    StepFunAPIService.shared.invalidateForMissingKey()
+                    if settings.stepfunAPIKey?.isEmpty == false {
+                        Task { await StepFunAPIService.shared.refresh(force: true) }
+                    }
+                }
+
+                RefreshMultiplierPicker(sourceID: "stepfun")
+            }
+
+            // API Key 输入（与推理接口共用同一把 Key）
+            HStack(spacing: 10) {
+                SecureField("请输入 Step Plan API Key", text: $apiKeyInput)
+                    .keyFieldStyle()
+
+                Button {
+                    saveKey()
+                } label: {
+                    // 输入框为空时按钮变为「删除」，允许清除已保存的 Key
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                .buttonStyle(SettingsProminentButtonStyle())
+            }
+
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章（含保存瞬时反馈）
+            SourceCardFooter(
+                sourceID: "stepfun",
+                consoleURL: region.consoleURL,
+                consoleHint: region == .domestic
+                    ? "前往阶跃星辰控制台查看订阅与用量"
+                    : "前往 StepFun Global 控制台查看订阅与用量",
+                badge: feedbackOrStatusBadge
+            )
+        }
+        .settingsCard()
+    }
+
+
+    // MARK: - 保存/删除
+
+    private func saveKey() {
+        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            // 删除 Key：置空配置并立即清空用量数据与缓存
+            settings.stepfunAPIKey = nil
+            StepFunAPIService.shared.invalidateForMissingKey()
+        } else {
+            settings.stepfunAPIKey = trimmed
+            // 更换 Key 后旧数据不再适用，先清空再立即拉取新数据；
+            // 首次配置自动开启状态栏显示（与其他源一致）
+            StepFunAPIService.shared.invalidateForMissingKey()
+            if !settings.statusBarEnabled(for: "stepfun") {
+                settings.setStatusBarEnabled(true, for: "stepfun")
+                NotificationCenter.default.post(name: .statusBarSettingsChanged, object: nil)
+            }
+            Task { await StepFunAPIService.shared.refresh(force: true) }
+        }
+        flashSavedBadge()
+    }
+
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        let configured = settings.stepfunAPIKey?.isEmpty == false
         return StatusBadge(title: configured ? "已配置" : "未配置",
                            icon: "bolt.fill", tint: configured ? .green : .secondary)
     }
