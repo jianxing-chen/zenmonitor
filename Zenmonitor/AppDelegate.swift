@@ -74,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             _ = StatusBarView.tavilyBadgeLogo
             _ = StatusBarView.openCodeBadgeLogo
             _ = StatusBarView.stepFunBadgeLogo
+            _ = StatusBarView.qianwenBadgeLogo
             _ = PanelLogo.zenmux
         }
     }
@@ -339,6 +340,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 view.showsPercentText = false
             } else if source.sourceID == "stepfun" {
                 view.badgeImage = StatusBarView.stepFunBadgeLogo
+                view.showsSourceBadge = true
+                view.showsPercentText = false
+            } else if source.sourceID == "qianwen" {
+                view.badgeImage = StatusBarView.qianwenBadgeLogo
                 view.showsSourceBadge = true
                 view.showsPercentText = false
             }
@@ -1286,6 +1291,16 @@ final class StatusBarView: NSView, StatusItemRenderable {
         return sparkleFallbackImage
     }()
 
+    /// 千问徽章 Logo 缓存：QianwenLogo 单色化（去底 + 置黑），
+    /// 处理失败时回退四角星形矢量图
+    static let qianwenBadgeLogo: NSImage? = {
+        if let icon = NSImage(named: "QianwenLogo"),
+           let mono = makeMonochromeSilhouette(icon) {
+            return mono
+        }
+        return sparkleFallbackImage
+    }()
+
     /// Kimi 徽章白色版已废弃（模板 tint 方案，同 appLogoInverted）
 
     /// 通用单色化：降采样 → 区域生长去底 → 亮度兜底清残留 → 置纯黑 → 包围盒裁剪。
@@ -1527,6 +1542,7 @@ struct SourceQuotaSection: View {
         case "zhipu", "ark":  return 20
         case "kimi":          return 18
         case "stepfun":       return 18
+        case "qianwen":       return 20
         default:              return 20
         }
     }

@@ -6,7 +6,7 @@
 //  集中管理所有已接入的监控源，向 AppDelegate / 设置界面提供统一访问入口。
 //
 //  当前版本内置 Zenmux、DeepSeek、Kimi、智谱 GLM、火山方舟、Tavily、OpenCode、
-//  StepFun 八个源；
+//  StepFun、千问九个源；
 //  未来支持「随时添加新源」时，可扩展为动态注册/注销与用户启用/禁用列表。
 //
 
@@ -44,7 +44,8 @@ final class SourceRegistry {
             ArkAPIService.shared,
             TavilyAPIService.shared,
             OpenCodeAPIService.shared,
-            StepFunAPIService.shared
+            StepFunAPIService.shared,
+            QianwenAPIService.shared
         ]
     }
 

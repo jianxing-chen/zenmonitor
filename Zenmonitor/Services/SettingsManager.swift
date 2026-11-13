@@ -101,6 +101,8 @@ final class SettingsManager {
         static let opencodeAPIKey = "opencode_api_key"
         static let stepfunAPIKey = "stepfun_api_key"
         static let stepfunRegion = "stepfun_region"
+        static let qianwenAccessKey = "qianwen_access_key"
+        static let qianwenSecretKey = "qianwen_secret_key"
         static let statusBarPrefix = "statusbar_enabled_"
         static let menuOrder = "menu_source_order"
         static let apiDomain = "api_domain"
@@ -232,6 +234,22 @@ final class SettingsManager {
             return .domestic
         }
         set { defaults.set(newValue.rawValue, forKey: Keys.stepfunRegion) }
+    }
+
+    // MARK: - 千问 AI Token Plan（阿里云 AK/SK）
+
+    /// 阿里云 RAM 子账号 AccessKey ID，用于 ACS3 签名换取控制台 token 查询
+    /// Token Plan 额度。需授予 AliyunModelStudioFullAccess 策略；
+    /// 套餐 sk-sp- Key 不适用。与其他源凭据相互独立。
+    var qianwenAccessKey: String? {
+        get { defaults.string(forKey: Keys.qianwenAccessKey) }
+        set { defaults.set(newValue, forKey: Keys.qianwenAccessKey) }
+    }
+
+    /// 阿里云 RAM 子账号 AccessKey Secret，与 qianwenAccessKey 配对使用
+    var qianwenSecretKey: String? {
+        get { defaults.string(forKey: Keys.qianwenSecretKey) }
+        set { defaults.set(newValue, forKey: Keys.qianwenSecretKey) }
     }
 
     // MARK: - 每源刷新倍率

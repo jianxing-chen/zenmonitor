@@ -98,6 +98,8 @@ struct SettingsView: View {
             OpenCodeSourceCard()
         case "stepfun":
             StepFunSourceCard()
+        case "qianwen":
+            QianwenSourceCard()
         default:
             // 未来新源的通用卡片
             GenericSourceCard(source: source)
@@ -1279,6 +1281,130 @@ private struct StepFunSourceCard: View {
         let configured = settings.stepfunAPIKey?.isEmpty == false
         return StatusBadge(title: configured ? "已配置" : "未配置",
                            icon: "bolt.fill", tint: configured ? .green : .secondary)
+    }
+}
+
+// MARK: - 千问 AI Token Plan 卡片
+
+/// 千问 AI Token Plan 配置卡：阿里云 RAM 子账号 AK/SK 双输入（与火山方舟同构）。
+///
+/// 凭据门槛提示：RAM 子账号需授予 AliyunModelStudioFullAccess 策略
+/// （ReadOnly 不含 Generate*，换 token 会一直 403）；套餐 sk-sp- Key 不适用。
+/// 首次查询若返回 Team.NotAuthorised，服务层自动完成业务空间授权（幂等）。
+private struct QianwenSourceCard: View {
+    @State private var accessKeyInput: String
+    @State private var secretKeyInput: String
+    @State private var showKeySaved = false
+
+    private let settings = SettingsManager.shared
+
+    init() {
+        _accessKeyInput = State(initialValue: SettingsManager.shared.qianwenAccessKey ?? "")
+        _secretKeyInput = State(initialValue: SettingsManager.shared.qianwenSecretKey ?? "")
+    }
+
+    /// 两个输入框去空白后是否均为空（空 = 删除凭据操作）
+    private var keyInputIsEmpty: Bool {
+        accessKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && secretKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 保存条件：两个输入框均非空
+    private var canSave: Bool {
+        !accessKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !secretKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 凭据是否已配置（任一缺失即未配置）
+    private var isConfigured: Bool {
+        settings.qianwenAccessKey?.isEmpty == false && settings.qianwenSecretKey?.isEmpty == false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 头部：Logo + 标题 + 刷新倍率
+            HStack(spacing: 10) {
+                Image("QianwenLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                Text("千问 Token Plan")
+                    .font(.headline)
+                    .foregroundStyle(SettingsPalette.primaryText)
+
+                Spacer(minLength: 8)
+
+                RefreshMultiplierPicker(sourceID: "qianwen")
+            }
+
+            // AccessKey 输入
+            SecureField("请输入阿里云 AccessKey（AK）", text: $accessKeyInput)
+                .keyFieldStyle()
+
+            // SecretKey 输入 + 保存/删除按钮
+            HStack(spacing: 10) {
+                SecureField("请输入 SecretKey（SK）", text: $secretKeyInput)
+                    .keyFieldStyle()
+
+                Button {
+                    if keyInputIsEmpty {
+                        // 删除凭据：置空配置并立即清空用量数据、缓存与内存 token
+                        settings.qianwenAccessKey = nil
+                        settings.qianwenSecretKey = nil
+                        QianwenAPIService.shared.invalidateForMissingCredentials()
+                        flashSavedBadge()
+                    } else if canSave {
+                        settings.qianwenAccessKey = accessKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        settings.qianwenSecretKey = secretKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // 更换凭据后先清空内存与缓存再拉取，避免新凭据失败时残留旧数据
+                        QianwenAPIService.shared.invalidateForMissingCredentials()
+                        // 首次配置凭据时自动开启状态栏显示（与火山方舟一致）
+                        if !settings.statusBarEnabled(for: "qianwen") {
+                            settings.setStatusBarEnabled(true, for: "qianwen")
+                            NotificationCenter.default.post(name: .statusBarSettingsChanged, object: nil)
+                        }
+                        Task { await QianwenAPIService.shared.refresh(force: true) }
+                        flashSavedBadge()
+                    }
+                    // 只填了一个输入框时不保存（按钮处于禁用态）
+                } label: {
+                    if keyInputIsEmpty {
+                        Label("删除", systemImage: "trash")
+                    } else {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                .buttonStyle(SettingsProminentButtonStyle())
+                .disabled(!keyInputIsEmpty && !canSave)
+            }
+
+            // 底部：菜单栏开关 + 控制台链接 + 状态徽章
+            SourceCardFooter(
+                sourceID: "qianwen",
+                consoleURL: URL(string: "https://platform.qianwenai.com/home/analytics/token-plan/individual")!,
+                consoleHint: "前往千问 AI 控制台查看用量（RAM AK/SK 需 AliyunModelStudioFullAccess 策略）",
+                badge: feedbackOrStatusBadge
+            )
+        }
+        .settingsCard()
+        // 保存反馈直切无动画：徽章过渡动画会触发整卡逐帧重算（内存尖峰来源之一）
+    }
+
+    /// 保存/删除后短暂闪烁徽章反馈，随后恢复配置状态显示
+    private func flashSavedBadge() {
+        showKeySaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showKeySaved = false
+        }
+    }
+
+    private var feedbackOrStatusBadge: StatusBadge {
+        if showKeySaved {
+            return StatusBadge(title: keyInputIsEmpty ? "已删除" : "已保存",
+                               icon: "checkmark.circle.fill", tint: .green)
+        }
+        return StatusBadge(title: isConfigured ? "已配置" : "未配置",
+                           icon: "bolt.fill", tint: isConfigured ? .green : .secondary)
     }
 }
 

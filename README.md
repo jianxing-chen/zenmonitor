@@ -13,7 +13,7 @@
 
 ## ✨ 功能特性
 
-- **八源监控**：配额型与余额型统一抽象，架构可随时扩展新源（见下方[支持的监控源](#-支持的监控源)）
+- **九源监控**：配额型与余额型统一抽象，架构可随时扩展新源（见下方[支持的监控源](#-支持的监控源)）
 - **每源独立状态栏项**：各源可在设置中独立开关菜单栏项——进度条、余额文本或品牌徽章三种形态；全部关闭时保留 App Logo 入口，永不失联
 - **下拉面板实时展示**：配额窗口进度条 + 重置时间 + 颜色三档预警（蓝→橙→红），面板打开期间数据到达即时更新
 - **统一自动刷新 + 每源独立倍率**：全局刷新间隔（30s~5m）为统一调度来源，每张源卡片可另选 ×1/×2/×4/×10 倍率（实际周期 = 全局间隔 × 倍率），精细控制各源请求频率
@@ -35,6 +35,7 @@
 | **Tavily** | 配额型 | 月度 Credits 配额 + 端点消耗明细 | 客户端节流适配端点限流（10 次/10 分钟）、区块默认折叠 |
 | **OpenCode Go** | 配额型 | 5H/7D/1M 三窗口配额 + 精确重置时间 | 官方 /usage 端点、标准 Bearer（与推理同 Key）、业务错误透传 |
 | **StepFun Step Plan** | 配额型 | 月度 Credit 月池（已用 / 剩余 / 总量）+ 重置时间 | **国内站 / 海外站切换**、时间进度标记按月池重置日自动推算、数据完整性提示 |
+| **千问 Token Plan** | 配额型 | 月度 Credits 配额（已用 %）+ 重置时间 | 阿里云 AK/SK **ACS3 签名**认证（CryptoKit 实现）、token 自动刷新、首次自动完成业务空间授权 |
 
 ## 📸 截图
 
@@ -82,6 +83,7 @@ open Zenmonitor.xcodeproj   # Cmd+R 运行
    | Tavily | API Key（tvly-...） | [app.tavily.com](https://app.tavily.com/home) |
    | OpenCode Go | API Key（Go 订阅，与推理同 Key） | [opencode.ai/auth](https://opencode.ai/auth) |
    | StepFun Step Plan | Step Plan API Key（国内/海外站不通用） | [platform.stepfun.com](https://platform.stepfun.com/step-plan) / [platform.stepfun.ai](https://platform.stepfun.ai/step-plan) |
+   | 千问 Token Plan | 阿里云 RAM 子账号 AK/SK（需 AliyunModelStudioFullAccess，非 sk-sp- Key） | [RAM 控制台](https://ram.console.aliyun.com/users) |
 
 3. 每张卡片可独立开关「在菜单栏显示」、选择刷新倍率，并拖动调整区块顺序。
 
@@ -92,7 +94,7 @@ MonitoredSource 协议（sourceID / snapshot / refresh(force:) / onStateChange�
         ↓
 SourceSnapshot 统一快照（.quota 配额型 / .balance 余额型）
         ↓
-SourceRegistry 注册中心（八源注册 / 全局定时器 / 每源倍率调度）
+SourceRegistry 注册中心（九源注册 / 全局定时器 / 每源倍率调度）
         ↓
 状态栏：每源独立 NSStatusItem + 模板图自绘（多屏外观自适应）
 下拉面板：SourceQuotaSection / SourceBalanceSection 按用户排序渲染
@@ -110,7 +112,7 @@ SourceRegistry 注册中心（八源注册 / 全局定时器 / 每源倍率调�
 ## 📋 系统要求与技术栈
 
 - **系统**：macOS 15.7+（Sequoia），Apple Silicon / Intel 通用
-- **技术栈**：Swift 5.9+，SwiftUI（设置面板/下拉面板）+ AppKit（NSStatusItem 状态栏、窗口管理）混合架构；CryptoKit（火山 V4 签名）；零第三方依赖
+- **技术栈**：Swift 5.9+，SwiftUI（设置面板/下拉面板）+ AppKit（NSStatusItem 状态栏、窗口管理）混合架构；CryptoKit（火山 V4 / 千问 ACS3 签名）；零第三方依赖
 
 ## 📊 资源占用
 
